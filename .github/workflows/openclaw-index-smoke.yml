@@ -15,6 +15,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +34,7 @@ jobs:
           npm run validate
       - name: Index OpenClaw ${{ matrix.source }}
         env:
+          GITNEXUS_BIN: gitnexus
           GITNEXUS_SKIP_OPTIONAL_GRAMMARS: '1'
           GITHUB_TOKEN: ${{ github.token }}
         run: |

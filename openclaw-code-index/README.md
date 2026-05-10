@@ -65,7 +65,8 @@ Indexes are local. The tool clones/fetches OpenClaw directly from
 Full OpenClaw graph indexing is CPU and disk work on your machine. It does not
 spend model tokens unless you explicitly enable an embedding or LLM-backed
 GitNexus workflow. On a maintainer laptop, the initial latest-release or `main`
-index can take roughly 20-30 minutes.
+index can take roughly 20-45 minutes. The wrapper allows 90 minutes by default;
+set `OPENCLAW_CODE_INDEX_ANALYZE_TIMEOUT_MS` to override that for slower hosts.
 
 ## Autoupdate
 

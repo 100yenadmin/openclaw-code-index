@@ -155,10 +155,16 @@ export async function runGitNexusAnalyze({
   if (force) args.push('--force');
   return run(command, args, {
     cwd,
-    timeoutMs: 30 * 60_000,
+    timeoutMs: analyzeTimeoutMs(),
     maxBytes: 4 * 1024 * 1024,
     env: { GITNEXUS_SKIP_OPTIONAL_GRAMMARS: process.env.GITNEXUS_SKIP_OPTIONAL_GRAMMARS || '1' },
   });
+}
+
+function analyzeTimeoutMs() {
+  const configured = Number.parseInt(process.env.OPENCLAW_CODE_INDEX_ANALYZE_TIMEOUT_MS || '', 10);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return 90 * 60_000;
 }
 
 async function gitRootFor(cwd) {
