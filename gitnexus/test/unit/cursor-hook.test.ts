@@ -125,10 +125,14 @@ describe('hooks.json wiring', () => {
     expect(command).not.toContain('augment-shell.sh');
   });
 
-  it('declares a positive timeout', () => {
+  it('declares timeout in seconds (not milliseconds)', () => {
+    // Cursor's `timeout` field is in seconds per
+    // https://cursor.com/docs/agent/hooks. Regression guard: a value of
+    // 1000+ here would be a >16-minute timeout, almost certainly a ms/s mixup.
     const timeout: number = manifest.hooks.postToolUse[0].timeout;
     expect(typeof timeout).toBe('number');
     expect(timeout).toBeGreaterThan(0);
+    expect(timeout).toBeLessThan(120);
   });
 });
 
