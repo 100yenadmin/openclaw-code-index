@@ -1,0 +1,35 @@
+{
+  "name": "openclaw-code-index",
+  "version": "0.1.0",
+  "description": "GitNexus-backed OpenClaw code intelligence for Codex Desktop agents and subagents.",
+  "author": {
+    "name": "100Yen",
+    "email": "support@electricsheephq.com",
+    "url": "https://github.com/100yenadmin"
+  },
+  "homepage": "https://github.com/100yenadmin/openclaw-code-index",
+  "repository": "https://github.com/100yenadmin/openclaw-code-index",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "keywords": ["openclaw", "gitnexus", "codex", "code-index", "mcp"],
+  "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenClaw Code Index",
+    "shortDescription": "GitNexus code intelligence for OpenClaw",
+    "longDescription": "OpenClaw Code Index connects Codex Desktop agents to GitNexus and provides OpenClaw-specific guidance for querying, tracing, and impact-checking upstream OpenClaw safely.",
+    "developerName": "100Yen",
+    "category": "Coding",
+    "capabilities": ["Interactive", "Read"],
+    "websiteURL": "https://github.com/100yenadmin/openclaw-code-index",
+    "privacyPolicyURL": "https://github.com/100yenadmin/openclaw-code-index",
+    "termsOfServiceURL": "https://github.com/100yenadmin/openclaw-code-index",
+    "defaultPrompt": [
+      "Use OpenClaw Code Index to explain this path",
+      "Check GitNexus impact before editing this symbol",
+      "Find the OpenClaw execution flow for this behavior"
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}

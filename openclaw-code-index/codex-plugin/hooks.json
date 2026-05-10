@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node \"${OPENCLAW_CODE_INDEX_CLI:-../bin/openclaw-code-index.mjs}\" bootstrap --cwd \"${CODEX_WORKSPACE:-${PWD}}\" --quiet",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

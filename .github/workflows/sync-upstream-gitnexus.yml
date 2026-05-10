@@ -1,0 +1,44 @@
+name: Sync upstream GitNexus
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Merge upstream main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/abhigyanpatwari/GitNexus.git || git remote set-url upstream https://github.com/abhigyanpatwari/GitNexus.git
+          git fetch upstream main
+          if git merge --no-edit upstream/main; then
+            if git diff --quiet origin/main HEAD; then
+              echo "Already in sync."
+            else
+              git push origin HEAD:main
+            fi
+          else
+            git merge --abort || true
+            gh issue create \
+              --title "Upstream GitNexus sync needs manual resolution" \
+              --body "Automated merge from abhigyanpatwari/GitNexus main failed. Resolve conflicts locally, keep OpenClaw Code Index additions isolated under openclaw-code-index/, then push main."
+            exit 1
+          fi
