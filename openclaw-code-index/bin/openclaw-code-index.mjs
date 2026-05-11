@@ -130,11 +130,17 @@ async function uninstallAutoupdate() {
 async function installLaunchd(source) {
   const plistPath = join(homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
   await mkdir(dirname(plistPath), { recursive: true });
+  const gitnexusBin = resolveGitNexusBin();
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key><string>${LABEL}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    ${gitnexusBin ? `<key>GITNEXUS_BIN</key><string>${gitnexusBin}</string>` : ''}
+  </dict>
   <key>ProgramArguments</key>
   <array>
     <string>${process.execPath}</string>
@@ -156,6 +162,13 @@ async function installLaunchd(source) {
   const loaded = await run('launchctl', ['load', plistPath], { timeoutMs: 10_000 });
   if (!loaded.ok) throw new Error(loaded.stderr || loaded.stdout || 'launchctl load failed');
   console.log(`Installed launchd autoupdate: ${plistPath}`);
+}
+
+function resolveGitNexusBin() {
+  for (const candidate of ['/opt/homebrew/bin/gitnexus', '/usr/local/bin/gitnexus']) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 async function uninstallLaunchd() {

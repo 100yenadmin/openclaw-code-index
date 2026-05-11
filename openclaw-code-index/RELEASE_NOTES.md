@@ -1,3 +1,11 @@
+# OpenClaw Code Index v0.1.2
+
+Fixes unattended macOS autoupdate reliability.
+
+- Adds a launchd `PATH` so scheduled refreshes can find Homebrew tools
+- Uses the installed global `gitnexus` binary when available, avoiding `npx`
+  startup during scheduled refreshes
+
 # OpenClaw Code Index v0.1.1
 
 Fixes the hosted OpenClaw smoke workflow timeout for clean GitHub runners.
