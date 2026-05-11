@@ -38,9 +38,9 @@ function printHelp() {
 Usage:
   openclaw-code-index status --cwd <path> [--json]
   openclaw-code-index bootstrap --cwd <path>
-  openclaw-code-index index --source latest-release|main|ref|local [--ref <ref>] [--path <path>]
-  openclaw-code-index sync --source latest-release|main|ref [--ref <ref>]
-  openclaw-code-index install-autoupdate --source latest-release|main [--schedule daily]
+  openclaw-code-index index --source latest-release|latest-beta|main|ref|local [--ref <ref>] [--path <path>]
+  openclaw-code-index sync --source latest-release|latest-beta|ref [--ref <ref>]
+  openclaw-code-index install-autoupdate --source latest-release|latest-beta [--schedule daily]
   openclaw-code-index uninstall-autoupdate
 
 Defaults:
@@ -106,8 +106,10 @@ async function index(parsed) {
 
 async function installAutoupdate(parsed) {
   const source = parsed.source || 'latest-release';
-  if (!['latest-release', 'main'].includes(source)) {
-    throw new Error('install-autoupdate supports --source latest-release or --source main.');
+  if (!['latest-release', 'latest-beta'].includes(source)) {
+    throw new Error(
+      'install-autoupdate supports --source latest-release or --source latest-beta. Use manual index/sync for main.',
+    );
   }
   const schedule = parsed.schedule || 'daily';
   if (schedule !== 'daily') throw new Error('Only --schedule daily is supported in v1.');

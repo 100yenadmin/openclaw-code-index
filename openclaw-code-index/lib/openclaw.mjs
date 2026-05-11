@@ -13,6 +13,7 @@ export function cacheRoot() {
 
 export function sourceAlias(source, ref) {
   if (source === 'latest-release') return 'openclaw-latest-release';
+  if (source === 'latest-beta') return 'openclaw-latest-beta';
   if (source === 'main') return 'openclaw-main';
   if (source === 'ref') return `openclaw-${slug(ref || 'ref')}`;
   return null;
@@ -33,15 +34,29 @@ export function slug(value) {
 }
 
 export async function latestOpenClawRelease() {
-  const headers = { Accept: 'application/vnd.github+json' };
-  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  const response = await fetch(`${OPENCLAW_API}/releases/latest`, { headers });
-  if (!response.ok) {
-    throw new Error(`Failed to resolve latest OpenClaw release: HTTP ${response.status}`);
-  }
-  const json = await response.json();
+  const json = await githubJson(`${OPENCLAW_API}/releases/latest`);
   if (!json?.tag_name) throw new Error('Latest OpenClaw release did not include tag_name.');
   return json.tag_name;
+}
+
+export async function latestOpenClawBetaTag() {
+  for (let page = 1; page <= 5; page += 1) {
+    const tags = await githubJson(`${OPENCLAW_API}/tags?per_page=100&page=${page}`);
+    if (!Array.isArray(tags) || tags.length === 0) break;
+    const match = tags.find((tag) => /beta/iu.test(tag?.name || ''));
+    if (match?.name) return match.name;
+  }
+  throw new Error('No OpenClaw beta tag found in the latest GitHub tag pages.');
+}
+
+async function githubJson(url) {
+  const headers = { Accept: 'application/vnd.github+json' };
+  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`GitHub API request failed: HTTP ${response.status} (${url})`);
+  }
+  return response.json();
 }
 
 export async function ensureOpenClawCheckout({ source, ref, path }) {
@@ -53,9 +68,7 @@ export async function ensureOpenClawCheckout({ source, ref, path }) {
     return { path: resolved, ref: detection.branch || 'local', alias: null, detection };
   }
 
-  const targetRef =
-    source === 'latest-release' ? await latestOpenClawRelease() : source === 'main' ? 'main' : ref;
-  if (!targetRef) throw new Error('--ref is required for --source ref.');
+  const targetRef = await resolveSourceRef(source, ref);
 
   const repoDir = sourceRepoDir(source, targetRef);
   await mkdir(join(repoDir, '..'), { recursive: true });
@@ -86,6 +99,17 @@ export async function ensureOpenClawCheckout({ source, ref, path }) {
   const detection = await detectOpenClaw(repoDir);
   const alias = sourceAlias(source, targetRef);
   return { path: repoDir, ref: targetRef, alias, detection };
+}
+
+async function resolveSourceRef(source, ref) {
+  if (source === 'latest-release') return latestOpenClawRelease();
+  if (source === 'latest-beta') return latestOpenClawBetaTag();
+  if (source === 'main') return 'main';
+  if (source === 'ref') {
+    if (!ref) throw new Error('--ref is required for --source ref.');
+    return ref;
+  }
+  throw new Error(`Unsupported OpenClaw source: ${source}`);
 }
 
 async function checkoutRef(repoDir, primaryRef, fallbackRef = null) {

@@ -1,3 +1,12 @@
+# OpenClaw Code Index v0.1.3
+
+Constrains automatic index refreshes to OpenClaw release and beta tags.
+
+- Removes the scheduled hosted smoke index; it is manual only
+- Removes `main` from local autoupdate support
+- Adds `latest-beta` as an explicit release-channel source
+- Keeps `main` available only through manual `index --source main`
+
 # OpenClaw Code Index v0.1.2
 
 Fixes unattended macOS autoupdate reliability.

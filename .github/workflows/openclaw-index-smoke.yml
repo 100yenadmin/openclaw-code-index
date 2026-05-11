@@ -2,8 +2,19 @@ name: OpenClaw index smoke
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '41 6 * * *'
+    inputs:
+      source:
+        description: 'OpenClaw source to index'
+        required: true
+        default: latest-release
+        type: choice
+        options:
+          - latest-release
+          - latest-beta
+          - ref
+      ref:
+        description: 'Required only when source=ref. Use a release or beta tag.'
+        required: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,10 +27,6 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        source: [latest-release, main]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -32,12 +39,22 @@ jobs:
           cd openclaw-code-index
           npm test
           npm run validate
-      - name: Index OpenClaw ${{ matrix.source }}
+      - name: Validate source selection
+        run: |
+          if [ "${{ inputs.source }}" = "ref" ] && [ -z "${{ inputs.ref }}" ]; then
+            echo "::error::ref is required when source=ref"
+            exit 1
+          fi
+      - name: Index OpenClaw ${{ inputs.source }}
         env:
           GITNEXUS_BIN: gitnexus
           GITNEXUS_SKIP_OPTIONAL_GRAMMARS: '1'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           cd openclaw-code-index
-          node bin/openclaw-code-index.mjs index --source "${{ matrix.source }}" --skip-skills
+          if [ "${{ inputs.source }}" = "ref" ]; then
+            node bin/openclaw-code-index.mjs index --source ref --ref "${{ inputs.ref }}" --skip-skills
+          else
+            node bin/openclaw-code-index.mjs index --source "${{ inputs.source }}" --skip-skills
+          fi
           gitnexus list

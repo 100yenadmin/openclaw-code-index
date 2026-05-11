@@ -8,6 +8,7 @@ import { run } from '../lib/process.mjs';
 
 test('source aliases are stable and public', () => {
   assert.equal(sourceAlias('latest-release'), 'openclaw-latest-release');
+  assert.equal(sourceAlias('latest-beta'), 'openclaw-latest-beta');
   assert.equal(sourceAlias('main'), 'openclaw-main');
   assert.equal(sourceAlias('ref', 'refs/tags/v2026.5.10'), 'openclaw-v2026.5.10');
   assert.equal(slug('feature/foo bar'), 'feature-foo-bar');

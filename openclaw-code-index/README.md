@@ -52,6 +52,7 @@ openclaw-code-index index --source latest-release
 Other supported sources:
 
 ```bash
+openclaw-code-index index --source latest-beta
 openclaw-code-index index --source main
 openclaw-code-index index --source ref --ref v2026.5.10
 openclaw-code-index index --source local --path /path/to/openclaw
@@ -68,12 +69,16 @@ GitNexus workflow. On a maintainer laptop, the initial latest-release or `main`
 index can take roughly 20-45 minutes. The wrapper allows 90 minutes by default;
 set `OPENCLAW_CODE_INDEX_ANALYZE_TIMEOUT_MS` to override that for slower hosts.
 
+`main` is intentionally manual. Automated refreshes are for release and beta
+tags only, so local machines do not churn on every upstream `main` movement.
+
 ## Autoupdate
 
-Install a local scheduled refresh:
+Install a local scheduled refresh for release or beta tags:
 
 ```bash
 openclaw-code-index install-autoupdate --source latest-release --schedule daily
+openclaw-code-index install-autoupdate --source latest-beta --schedule daily
 ```
 
 Remove it:
@@ -83,7 +88,9 @@ openclaw-code-index uninstall-autoupdate
 ```
 
 macOS uses a user LaunchAgent. Linux uses a user systemd timer when available
-and falls back to crontab otherwise.
+and falls back to crontab otherwise. Autoupdate does not support `main`; use
+manual `index --source main` only when you explicitly want a moving-branch
+index.
 
 ## Agent Contract
 
