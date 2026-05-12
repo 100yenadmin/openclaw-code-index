@@ -34,8 +34,11 @@ jobs:
           node-version: '22'
       - name: Build forked GitNexus
         run: |
-          cd gitnexus
+          cd gitnexus-shared
           npm ci
+          npm run build
+          cd ../gitnexus
+          npm ci --ignore-scripts
           npm run build
       - name: Validate OpenClaw Code Index
         run: |
