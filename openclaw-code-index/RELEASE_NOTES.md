@@ -1,3 +1,18 @@
+# OpenClaw Code Index v0.1.4
+
+Makes OpenClaw Code Index use the canonical forked GitNexus behavior instead of
+plain upstream `gitnexus@latest`.
+
+- Ports the carried Electric Sheep GitNexus fixes into the OpenClaw fork:
+  token-budgeted query/context output, MCP alias normalization, eval-server auth,
+  and hardening tests
+- Adds `openclaw-code-index mcp`, a read-only wrapper that hides mutation tools
+  such as `rename` and `group_sync`
+- Adds `openclaw-code-index prime` for bounded task-scoped context slices
+- Adds MCP `maxTokens` support for `query`, `context`, and `impact`
+- Rewires the Codex Desktop plugin and Codex CLI instructions to use the
+  OpenClaw wrapper MCP
+
 # OpenClaw Code Index v0.1.3
 
 Constrains automatic index refreshes to OpenClaw release and beta tags.

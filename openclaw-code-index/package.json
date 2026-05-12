@@ -1,6 +1,6 @@
 {
   "name": "@100yen/openclaw-code-index",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Portable OpenClaw Code Index distribution for Codex Desktop and Codex CLI, powered by GitNexus.",
   "type": "module",
   "license": "PolyForm-Noncommercial-1.0.0",
