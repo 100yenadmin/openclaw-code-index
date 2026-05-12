@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 import { cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { run } from '../lib/process.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
+const monorepoRoot = new URL('../..', import.meta.url).pathname;
+const gitnexusRoot = join(monorepoRoot, 'gitnexus');
+const gitnexusDist = join(gitnexusRoot, 'dist');
 const dist = join(root, 'dist');
 const bundleRoot = join(dist, 'bundle', 'openclaw-code-index');
 const zipPath = join(dist, 'openclaw-code-index-codex-plugin.zip');
+
+if (!existsSync(join(gitnexusDist, 'cli', 'index.js'))) {
+  throw new Error('gitnexus/dist/cli/index.js is missing. Run `npm run build` in gitnexus first.');
+}
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(bundleRoot, { recursive: true });
@@ -23,6 +30,14 @@ for (const item of [
   'package.json',
 ]) {
   await cp(join(root, item), join(bundleRoot, item), { recursive: true });
+}
+
+await mkdir(join(bundleRoot, 'vendor', 'gitnexus'), { recursive: true });
+for (const item of ['dist', 'package.json', 'package-lock.json', 'vendor']) {
+  const source = join(gitnexusRoot, item);
+  if (existsSync(source)) {
+    await cp(source, join(bundleRoot, 'vendor', 'gitnexus', item), { recursive: true });
+  }
 }
 
 const contentChecksums = [];

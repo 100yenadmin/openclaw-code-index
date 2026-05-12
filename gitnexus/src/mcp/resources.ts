@@ -8,6 +8,22 @@
 import type { LocalBackend } from './local/local-backend.js';
 import { checkStaleness } from './staleness.js';
 
+function openclawReadOnlyMode(): boolean {
+  return process.env.OPENCLAW_CODE_INDEX_MCP === '1' || process.env.GITNEXUS_MCP_READ_ONLY === '1';
+}
+
+function isOpenClawAlias(name: string): boolean {
+  const configured = process.env.OPENCLAW_CODE_INDEX_ALLOWED_REPOS;
+  if (configured) {
+    return configured
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .includes(name);
+  }
+  return /^openclaw(?:-|$)/u.test(name);
+}
+
 export interface ResourceDefinition {
   uri: string;
   name: string;
@@ -47,7 +63,7 @@ export function getResourceDefinitions(): ResourceDefinition[] {
  * Dynamic resource templates
  */
 export function getResourceTemplates(): ResourceTemplate[] {
-  return [
+  const templates = [
     {
       uriTemplate: 'gitnexus://repo/{name}/context',
       name: 'Repo Overview',
@@ -98,6 +114,9 @@ export function getResourceTemplates(): ResourceTemplate[] {
       mimeType: 'text/yaml',
     },
   ];
+  return openclawReadOnlyMode()
+    ? templates.filter((template) => !template.uriTemplate.startsWith('gitnexus://group/'))
+    : templates;
 }
 
 /** Query parameters for `gitnexus://group/{name}/contracts` */
@@ -273,11 +292,18 @@ async function getReposResource(backend: LocalBackend): Promise<string> {
   const repos = await backend.listRepos();
 
   if (repos.length === 0) {
-    return 'repos: []\n# No repositories indexed. Run: gitnexus analyze';
+    const command = openclawReadOnlyMode()
+      ? 'openclaw-code-index index --source latest-release'
+      : 'gitnexus analyze';
+    return `repos: []\n# No repositories indexed. Run: ${command}`;
   }
 
+  const visibleRepos = openclawReadOnlyMode()
+    ? repos.filter((repo) => isOpenClawAlias(repo.name))
+    : repos;
+
   const lines: string[] = ['repos:'];
-  for (const repo of repos) {
+  for (const repo of visibleRepos) {
     lines.push(`  - name: "${repo.name}"`);
     lines.push(`    path: "${repo.path}"`);
     lines.push(`    indexed: "${repo.indexedAt}"`);
@@ -289,10 +315,16 @@ async function getReposResource(backend: LocalBackend): Promise<string> {
     }
   }
 
-  if (repos.length > 1) {
+  if (openclawReadOnlyMode()) {
+    lines.push('');
+    lines.push(
+      '# OpenClaw Code Index defaults omitted repo parameters to openclaw-latest-release.',
+    );
+    lines.push('# Pass repo explicitly for main, beta, ref, or local-worktree analysis.');
+  } else if (visibleRepos.length > 1) {
     lines.push('');
     lines.push('# Multiple repos indexed. Use repo parameter in tool calls:');
-    lines.push(`# gitnexus_search({query: "auth", repo: "${repos[0].name}"})`);
+    lines.push(`# gitnexus_search({query: "auth", repo: "${visibleRepos[0].name}"})`);
   }
 
   return lines.join('\n');
@@ -308,7 +340,10 @@ async function getContextResource(backend: LocalBackend, repoName?: string): Pro
   const context = backend.getContext(repoId) || backend.getContext();
 
   if (!context) {
-    return 'error: No codebase loaded. Run: gitnexus analyze';
+    const command = openclawReadOnlyMode()
+      ? 'openclaw-code-index index --source latest-release'
+      : 'gitnexus analyze';
+    return `error: No codebase loaded. Run: ${command}`;
   }
 
   // Check staleness
@@ -336,11 +371,22 @@ async function getContextResource(backend: LocalBackend, repoName?: string): Pro
   lines.push('  - context: 360-degree symbol view (categorized refs, process participation)');
   lines.push('  - impact: Blast radius analysis (what breaks if you change a symbol)');
   lines.push('  - detect_changes: Git-diff impact analysis (what do your changes affect)');
-  lines.push('  - rename: Multi-file coordinated rename with confidence tags');
+  if (!openclawReadOnlyMode()) {
+    lines.push('  - rename: Multi-file coordinated rename with confidence tags');
+  }
   lines.push('  - cypher: Raw graph queries');
   lines.push('  - list_repos: Discover all indexed repositories');
   lines.push('');
-  lines.push('re_index: Run `npx gitnexus analyze` in terminal if data is stale');
+  if (openclawReadOnlyMode()) {
+    lines.push(
+      're_index: Run `openclaw-code-index index --source latest-release` or pass an explicit source if data is stale',
+    );
+    lines.push(
+      'default_repo: "Omitted repo parameters use openclaw-latest-release, not your current worktree."',
+    );
+  } else {
+    lines.push('re_index: Run `npx gitnexus analyze` in terminal if data is stale');
+  }
   lines.push('');
   lines.push('resources_available:');
   lines.push('  - gitnexus://repos: All indexed repositories');
@@ -348,10 +394,12 @@ async function getContextResource(backend: LocalBackend, repoName?: string): Pro
   lines.push(`  - gitnexus://repo/${context.projectName}/processes: All execution flows`);
   lines.push(`  - gitnexus://repo/${context.projectName}/cluster/{name}: Module details`);
   lines.push(`  - gitnexus://repo/${context.projectName}/process/{name}: Process trace`);
-  lines.push(
-    '  - gitnexus://group/{name}/contracts: Group contract registry (optional ?type=&repo=&unmatchedOnly=)',
-  );
-  lines.push('  - gitnexus://group/{name}/status: Group index / contract staleness');
+  if (!openclawReadOnlyMode()) {
+    lines.push(
+      '  - gitnexus://group/{name}/contracts: Group contract registry (optional ?type=&repo=&unmatchedOnly=)',
+    );
+    lines.push('  - gitnexus://group/{name}/status: Group index / contract staleness');
+  }
 
   return lines.join('\n');
 }
@@ -581,17 +629,29 @@ async function getSetupResource(backend: LocalBackend): Promise<string> {
   const repos = await backend.listRepos();
 
   if (repos.length === 0) {
-    return '# GitNexus\n\nNo repositories indexed. Run: `npx gitnexus analyze` in a repository.';
+    const command = openclawReadOnlyMode()
+      ? 'openclaw-code-index index --source latest-release'
+      : 'npx gitnexus analyze';
+    return `# GitNexus\n\nNo repositories indexed. Run: \`${command}\` in a repository.`;
   }
 
   const sections: string[] = [];
 
-  for (const repo of repos) {
+  const visibleRepos = openclawReadOnlyMode()
+    ? repos.filter((repo) => isOpenClawAlias(repo.name))
+    : repos;
+
+  for (const repo of visibleRepos) {
     const stats = repo.stats || {};
     const lines = [
-      `# GitNexus MCP — ${repo.name}`,
+      openclawReadOnlyMode()
+        ? `# OpenClaw Code Index MCP — ${repo.name}`
+        : `# GitNexus MCP — ${repo.name}`,
       '',
       `This project is indexed by GitNexus as **${repo.name}** (${stats.nodes || 0} symbols, ${stats.edges || 0} relationships, ${stats.processes || 0} execution flows).`,
+      openclawReadOnlyMode()
+        ? 'If a tool call omits `repo`, OpenClaw Code Index defaults to `openclaw-latest-release`; pass `repo` explicitly for main, beta, ref, or local worktree work.'
+        : '',
       '',
       '## Tools',
       '',
@@ -601,7 +661,9 @@ async function getSetupResource(backend: LocalBackend): Promise<string> {
       '| `context` | 360-degree symbol view — categorized refs, processes it participates in |',
       '| `impact` | Symbol blast radius — what breaks at depth 1/2/3 with confidence |',
       '| `detect_changes` | Git-diff impact — what do your current changes affect |',
-      '| `rename` | Multi-file coordinated rename with confidence-tagged edits |',
+      ...(openclawReadOnlyMode()
+        ? []
+        : ['| `rename` | Multi-file coordinated rename with confidence-tagged edits |']),
       '| `cypher` | Raw graph queries |',
       '| `list_repos` | Discover indexed repos |',
       '',

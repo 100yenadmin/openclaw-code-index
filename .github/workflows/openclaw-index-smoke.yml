@@ -32,8 +32,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      - name: Install GitNexus
-        run: npm install -g gitnexus@latest
+      - name: Build forked GitNexus
+        run: |
+          cd gitnexus
+          npm ci
+          npm run build
       - name: Validate OpenClaw Code Index
         run: |
           cd openclaw-code-index
@@ -47,7 +50,7 @@ jobs:
           fi
       - name: Index OpenClaw ${{ inputs.source }}
         env:
-          GITNEXUS_BIN: gitnexus
+          GITNEXUS_BIN: ${{ github.workspace }}/gitnexus/dist/cli/index.js
           GITNEXUS_SKIP_OPTIONAL_GRAMMARS: '1'
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -57,4 +60,4 @@ jobs:
           else
             node bin/openclaw-code-index.mjs index --source "${{ inputs.source }}" --skip-skills
           fi
-          gitnexus list
+          node ../gitnexus/dist/cli/index.js list

@@ -137,10 +137,16 @@ export async function impactCommand(
     repo?: string;
     depth?: string;
     includeTests?: boolean;
+    maxTokens?: string;
   },
 ): Promise<void> {
   if (!target?.trim()) {
     cliError('Usage: gitnexus impact <symbol_name> [--direction upstream|downstream]');
+    process.exit(1);
+  }
+  const maxTokens = parseMaxTokens(options?.maxTokens);
+  if (maxTokens.error) {
+    cliError(`  --max-tokens ${maxTokens.error}\n`);
     process.exit(1);
   }
 
@@ -153,7 +159,11 @@ export async function impactCommand(
       includeTests: options?.includeTests ?? false,
       repo: options?.repo,
     });
-    output(result);
+    let text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    if (maxTokens.value) {
+      text = truncateToTokenBudget(text, maxTokens.value);
+    }
+    output(text);
   } catch (err: unknown) {
     // Belt-and-suspenders: catch infrastructure failures (getBackend, callTool transport)
     // The backend's impact() already returns structured errors for graph query failures

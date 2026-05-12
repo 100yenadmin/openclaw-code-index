@@ -368,6 +368,12 @@ async function doInitLbug(repoId: string, dbPath: string): Promise<void> {
         lastError = err instanceof Error ? err : new Error(String(err));
 
         if (isWalCorruptionError(lastError)) {
+          if (process.env.GITNEXUS_READ_ONLY_NO_WAL_RECOVERY === '1') {
+            throw new Error(
+              `LadybugDB WAL corruption detected for ${repoId}. ` +
+                `Run \`gitnexus analyze\` to rebuild the index.`,
+            );
+          }
           try {
             const db = await tryQuarantineAndReopen(dbPath, repoId);
             shared = { db, refCount: 0, ftsLoaded: false };

@@ -10,10 +10,12 @@ Use this skill for upstream `openclaw/openclaw` work in Codex Desktop.
 ## Contract
 
 - Prefer GitNexus for OpenClaw architecture and navigation questions before broad `rg` sweeps.
+- Use `rg` directly for exact strings, known file paths, and final source verification.
 - Use file reads to verify graph results before making maintainer-facing claims.
 - Treat stale GitNexus indexes as non-authoritative.
 - Run impact analysis before editing shared runtime, gateway, plugin SDK, provider/auth, Codex harness, sessions, prompt, memory, or compaction surfaces.
 - Do not use GitNexus mutation/refactor tools in v1. This integration is read-only.
+- If a tool call omits `repo`, the MCP defaults to `openclaw-latest-release`; pass `repo` explicitly for `openclaw-main`, beta/ref aliases, or local-worktree indexes.
 
 ## Setup Checks
 
@@ -32,7 +34,7 @@ Use `--source main`, `--source ref --ref <tag-or-sha>`, or `--source local --pat
 
 ## GitNexus Workflow
 
-- For unfamiliar areas: use MCP `query` with `repo: "openclaw-latest-release"` unless a different OpenClaw alias is required.
+- For unfamiliar architecture or flows: use MCP `query` with `repo: "openclaw-latest-release"` unless a different OpenClaw alias is required.
 - For a symbol: use MCP `context` with the OpenClaw repo alias.
 - Before modifying a symbol: use MCP `impact` with `direction: "upstream"`.
 - Use `maxTokens` on `query`, `context`, or `impact` when you need a bounded slice.

@@ -38,6 +38,10 @@ const OPENCLAW_READ_ONLY_TOOLS = new Set([
   'cypher',
 ]);
 const BUDGETED_TOOLS = new Set(['query', 'context', 'impact']);
+const OPENCLAW_QUERY_LIMIT_MAX = 20;
+const OPENCLAW_QUERY_SYMBOLS_MAX = 50;
+const OPENCLAW_IMPACT_DEPTH_MAX = 8;
+const OPENCLAW_IMPACT_TIMEOUT_MAX = 60_000;
 
 function openclawReadOnlyMode(): boolean {
   return process.env.OPENCLAW_CODE_INDEX_MCP === '1' || process.env.GITNEXUS_MCP_READ_ONLY === '1';
@@ -50,6 +54,14 @@ function defaultRepo(): string {
 }
 
 function openclawRepoAllowed(repo: string): boolean {
+  const configured = process.env.OPENCLAW_CODE_INDEX_ALLOWED_REPOS;
+  if (configured) {
+    return configured
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .includes(repo);
+  }
   return /^openclaw(?:-|$)/u.test(repo);
 }
 
@@ -57,6 +69,22 @@ function normalizeArgsForOpenClaw(toolName: string, args: Record<string, any> | 
   const normalized = { ...(args || {}) };
   if (toolName !== 'list_repos' && !normalized.repo && defaultRepo()) {
     normalized.repo = defaultRepo();
+  }
+  if (toolName === 'query') {
+    normalized.limit = clampPositiveInteger(normalized.limit, OPENCLAW_QUERY_LIMIT_MAX);
+    normalized.max_symbols = clampPositiveInteger(
+      normalized.max_symbols,
+      OPENCLAW_QUERY_SYMBOLS_MAX,
+    );
+  }
+  if (toolName === 'impact') {
+    normalized.maxDepth = clampPositiveInteger(normalized.maxDepth, OPENCLAW_IMPACT_DEPTH_MAX);
+    normalized.crossDepth = clampPositiveInteger(normalized.crossDepth, OPENCLAW_IMPACT_DEPTH_MAX);
+    normalized.timeoutMs = clampPositiveInteger(
+      normalized.timeoutMs ?? normalized.timeout,
+      OPENCLAW_IMPACT_TIMEOUT_MAX,
+    );
+    normalized.timeout = undefined;
   }
   return normalized;
 }
@@ -67,9 +95,35 @@ function assertOpenClawReadOnlyCall(toolName: string, args: Record<string, any> 
     throw new Error(`Tool "${toolName}" is not available in OpenClaw Code Index read-only mode.`);
   }
   const repo = typeof args?.repo === 'string' ? args.repo : '';
-  if (repo && !repo.startsWith('@') && !openclawRepoAllowed(repo)) {
+  if (repo.startsWith('@')) {
+    throw new Error('Group mode is not available in OpenClaw Code Index read-only mode.');
+  }
+  if (repo && !openclawRepoAllowed(repo)) {
     throw new Error(`Repo "${repo}" is not an OpenClaw Code Index alias.`);
   }
+}
+
+function clampPositiveInteger(raw: unknown, max: number): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) return undefined;
+  return Math.min(value, max);
+}
+
+function filterOpenClawToolResult(toolName: string, result: any): any {
+  if (!openclawReadOnlyMode() || toolName !== 'list_repos' || !Array.isArray(result)) {
+    return result;
+  }
+  return result.filter((repo) => typeof repo?.name === 'string' && openclawRepoAllowed(repo.name));
+}
+
+function toolForMcp(tool: (typeof GITNEXUS_TOOLS)[number]): (typeof GITNEXUS_TOOLS)[number] {
+  if (!openclawReadOnlyMode()) return tool;
+  if (!['query', 'context', 'impact', 'detect_changes', 'cypher'].includes(tool.name)) return tool;
+  return {
+    ...tool,
+    description: `${tool.description}\n\nOPENCLAW CODE INDEX: This read-only MCP defaults omitted repo parameters to openclaw-latest-release. Pass repo explicitly for openclaw-main, beta/ref aliases, or local-worktree indexes. Use maxTokens on query/context/impact for bounded retrieval slices.`,
+  };
 }
 
 function assertOpenClawReadOnlyResource(uri: string) {
@@ -225,12 +279,14 @@ export function createMCPServer(backend: LocalBackend): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: GITNEXUS_TOOLS.filter(
       (tool) => !openclawReadOnlyMode() || OPENCLAW_READ_ONLY_TOOLS.has(tool.name),
-    ).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      annotations: tool.annotations,
-    })),
+    )
+      .map((tool) => toolForMcp(tool))
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        annotations: tool.annotations,
+      })),
   }));
 
   // Handle tool calls — append next-step hints to guide agent workflow
@@ -243,7 +299,7 @@ export function createMCPServer(backend: LocalBackend): Server {
         args as Record<string, any> | undefined,
       );
       assertOpenClawReadOnlyCall(name, normalizedArgs);
-      const result = await backend.callTool(name, normalizedArgs);
+      const result = filterOpenClawToolResult(name, await backend.callTool(name, normalizedArgs));
       const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
       const hint = getNextStepHint(name, normalizedArgs as Record<string, any> | undefined);
       const responseText = applyTokenBudget(name, normalizedArgs, resultText + hint);
@@ -286,18 +342,22 @@ export function createMCPServer(backend: LocalBackend): Server {
           { name: 'base_ref', description: 'Branch/commit for compare scope', required: false },
         ],
       },
-      {
-        name: 'generate_map',
-        description:
-          'Generate architecture documentation from the knowledge graph. Creates a codebase overview with execution flows and mermaid diagrams.',
-        arguments: [
-          {
-            name: 'repo',
-            description: 'Repository name (omit if only one indexed)',
-            required: false,
-          },
-        ],
-      },
+      ...(!openclawReadOnlyMode()
+        ? [
+            {
+              name: 'generate_map',
+              description:
+                'Generate architecture documentation from the knowledge graph. Creates a codebase overview with execution flows and mermaid diagrams.',
+              arguments: [
+                {
+                  name: 'repo',
+                  description: 'Repository name (omit if only one indexed)',
+                  required: false,
+                },
+              ],
+            },
+          ]
+        : []),
     ],
   }));
 
@@ -330,6 +390,11 @@ Present the analysis as a clear risk report.`,
     }
 
     if (name === 'generate_map') {
+      if (openclawReadOnlyMode()) {
+        throw new Error(
+          'Prompt "generate_map" is not available in OpenClaw Code Index read-only mode.',
+        );
+      }
       const repo = args?.repo || '';
       return {
         messages: [

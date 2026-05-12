@@ -35,5 +35,6 @@ describe('token budget helpers', () => {
     expect(parseMaxTokens('0').error).toMatch(/positive integer/);
     expect(parseMaxTokens('-1').error).toMatch(/positive integer/);
     expect(parseMaxTokens('1.5').error).toMatch(/positive integer/);
+    expect(parseMaxTokens('50001').error).toMatch(/50000 or less/);
   });
 });

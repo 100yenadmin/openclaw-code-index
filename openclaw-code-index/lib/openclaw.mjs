@@ -144,6 +144,7 @@ export async function detectOpenClaw(cwd = process.cwd()) {
 }
 
 export function formatBootstrap(detection, extra = {}) {
+  const aliases = extra.indexAliases || readOpenClawIndexAliases();
   if (!detection.isOpenClaw) {
     return [
       '<openclaw-code-index>',
@@ -161,7 +162,9 @@ export function formatBootstrap(detection, extra = {}) {
     `worktree: ${detection.gitRoot || 'unknown'}`,
     `branch: ${detection.branch || 'detached-or-unknown'}`,
     `defaultIndex: ${extra.defaultIndex || 'openclaw-latest-release'}`,
-    'contract: use GitNexus query/context/impact before broad OpenClaw source spelunking; verify graph results with file reads; stale indexes are hints, not proof.',
+    `indexedAliases: ${aliases.length ? aliases.join(', ') : 'none'}`,
+    'defaultWarning: omitted repo parameters use openclaw-latest-release, not this worktree; pass repo explicitly for openclaw-main, beta/ref, or local-worktree indexes.',
+    'contract: use GitNexus query/context/impact for architecture, flow, and impact navigation before broad OpenClaw source spelunking; use exact file reads/rg to verify graph results; stale indexes are hints, not proof.',
     '</openclaw-code-index>',
   ].join('\n');
 }
@@ -188,15 +191,65 @@ export async function runGitNexusAnalyze({
   });
 }
 
-export function resolveGitNexusInvocation() {
+export function resolveGitNexusInvocation(options = {}) {
   if (process.env.GITNEXUS_BIN) return { command: process.env.GITNEXUS_BIN, args: [] };
   const configured = readGitNexusBinConfig();
   if (configured) return { command: process.execPath, args: [configured] };
+  const vendoredDist = resolve(
+    join(new URL('..', import.meta.url).pathname, 'vendor', 'gitnexus', 'dist', 'cli', 'index.js'),
+  );
+  if (existsSync(vendoredDist)) return { command: process.execPath, args: [vendoredDist] };
   const localDist = resolve(
     join(new URL('../..', import.meta.url).pathname, 'gitnexus', 'dist', 'cli', 'index.js'),
   );
   if (existsSync(localDist)) return { command: process.execPath, args: [localDist] };
+  if (options.requirePatched) {
+    throw new Error(
+      "OpenClaw Code Index MCP requires the bundled/forked GitNexus CLI. Re-run `node install.mjs` from the release bundle or set GITNEXUS_BIN to this fork's gitnexus/dist/cli/index.js.",
+    );
+  }
   return { command: 'gitnexus', args: [] };
+}
+
+export function readOpenClawIndexAliases() {
+  const registry = readGitNexusRegistry();
+  return registry
+    .filter((entry) => isOpenClawRegistryEntry(entry))
+    .map((entry) => entry.name)
+    .filter(Boolean)
+    .sort();
+}
+
+function readGitNexusRegistry() {
+  const path = join(process.env.GITNEXUS_HOME || join(homedir(), '.gitnexus'), 'registry.json');
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isOpenClawRegistryEntry(entry) {
+  if (!entry || typeof entry.name !== 'string' || typeof entry.path !== 'string') return false;
+  if (!/^openclaw(?:-|$)/u.test(entry.name)) return false;
+  return looksLikeOpenClawPath(entry.path);
+}
+
+function looksLikeOpenClawPath(root) {
+  const packageInfo = readPackageInfo(root);
+  const markers = {
+    openclawMjs: existsSync(join(root, 'openclaw.mjs')),
+    gatewayDir: existsSync(join(root, 'src', 'gateway')),
+    pluginSdkDir: existsSync(join(root, 'src', 'plugin-sdk')),
+    extensionsDir: existsSync(join(root, 'extensions')),
+  };
+  return Boolean(
+    packageInfo?.name === 'openclaw' &&
+    markers.openclawMjs &&
+    markers.gatewayDir &&
+    markers.pluginSdkDir,
+  );
 }
 
 function readGitNexusBinConfig() {

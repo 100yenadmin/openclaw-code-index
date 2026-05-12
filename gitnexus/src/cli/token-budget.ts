@@ -3,6 +3,8 @@ export interface ParsedMaxTokens {
   error?: string;
 }
 
+export const MAX_TOKEN_BUDGET = 50_000;
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -23,6 +25,9 @@ export function parseMaxTokens(raw: unknown): ParsedMaxTokens {
   const value = typeof raw === 'number' ? raw : Number(String(raw));
   if (!Number.isInteger(value) || value <= 0) {
     return { error: 'maxTokens must be a positive integer.' };
+  }
+  if (value > MAX_TOKEN_BUDGET) {
+    return { error: `maxTokens must be ${MAX_TOKEN_BUDGET} or less.` };
   }
 
   return { value };

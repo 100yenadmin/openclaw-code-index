@@ -1,6 +1,6 @@
 {
   "name": "@100yen/openclaw-code-index",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Portable OpenClaw Code Index distribution for Codex Desktop and Codex CLI, powered by GitNexus.",
   "type": "module",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -11,8 +11,8 @@
     "openclaw-code-index": "./bin/openclaw-code-index.mjs"
   },
   "scripts": {
-    "test": "node --test",
-    "validate": "node scripts/validate.mjs && node --test",
+    "test": "node --test test/*.test.mjs",
+    "validate": "node scripts/validate.mjs && node --test test/*.test.mjs",
     "bundle": "node scripts/build-release-bundle.mjs"
   },
   "engines": {

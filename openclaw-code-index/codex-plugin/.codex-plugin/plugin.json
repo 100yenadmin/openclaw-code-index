@@ -1,6 +1,6 @@
 {
   "name": "openclaw-code-index",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "GitNexus-backed OpenClaw code intelligence for Codex Desktop agents and subagents.",
   "author": {
     "name": "100Yen",

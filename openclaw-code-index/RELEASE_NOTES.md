@@ -1,3 +1,21 @@
+# OpenClaw Code Index v0.1.5
+
+Hardens the Codex integration after duplicate-MCP and fresh-install stress
+testing.
+
+- Bundles the forked GitNexus CLI into the release zip and fails closed for MCP
+  if the patched CLI is unavailable
+- Filters OpenClaw read-only MCP aliases/resources to actual OpenClaw indexes
+  and blocks group-mode repo routing
+- Adds bounded defaults and upper limits for MCP/CLI retrieval slices, including
+  `gitnexus impact --max-tokens`
+- Prevents read-only MCP startup from repairing/quarantining LadybugDB WAL files
+  as a side effect
+- Clarifies agent guidance: GitNexus for architecture/flow/impact navigation,
+  `rg` and file reads for exact verification
+- Updates release and smoke workflows to build and use the forked GitNexus code,
+  not upstream `gitnexus@latest`
+
 # OpenClaw Code Index v0.1.4
 
 Makes OpenClaw Code Index use the canonical forked GitNexus behavior instead of

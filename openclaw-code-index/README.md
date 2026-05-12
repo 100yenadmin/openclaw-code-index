@@ -60,9 +60,10 @@ openclaw-code-index index --source local --path /path/to/openclaw
 
 Indexes are local. The tool clones/fetches OpenClaw directly from
 `openclaw/openclaw` into `~/.openclaw-code-index/repos/` and then runs
-GitNexus analyze with the stable alias for that source. Set `GITNEXUS_BIN` to a
-specific GitNexus binary when you want to pin the forked CLI; otherwise the
-wrapper uses the first `gitnexus` on `PATH`.
+GitNexus analyze with the stable alias for that source. Release-bundle installs
+stage the bundled forked GitNexus CLI and point the wrapper at it. Set
+`GITNEXUS_BIN` only when you intentionally want to override that pinned forked
+CLI.
 
 Full OpenClaw graph indexing is CPU and disk work on your machine. It does not
 spend model tokens unless you explicitly enable an embedding or LLM-backed
@@ -99,6 +100,9 @@ index.
   review, and shared-runtime edits.
 - Verify graph answers with source reads.
 - Treat stale indexes as hints, not proof.
+- Pass `repo` explicitly when working against `openclaw-main`, a beta/ref alias,
+  or a local worktree. Omitted `repo` parameters default to
+  `openclaw-latest-release`.
 - Do not expose GitNexus mutation/refactor tools in v1. The wrapper MCP hides
   mutation surfaces such as `rename` and `group_sync`.
 

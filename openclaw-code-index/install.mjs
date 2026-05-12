@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { access, chmod, cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,8 +27,11 @@ for (const item of [
   'README.md',
   'RELEASE_NOTES.md',
   'package.json',
+  'vendor',
 ]) {
-  await cp(join(ROOT, item), join(targetRoot, item), { recursive: true });
+  if (await exists(join(ROOT, item))) {
+    await cp(join(ROOT, item), join(targetRoot, item), { recursive: true });
+  }
 }
 
 const cliPath = join(targetRoot, 'bin', 'openclaw-code-index.mjs');
@@ -59,9 +63,16 @@ mcp.mcpServers['openclaw-code-index'].command = 'node';
 mcp.mcpServers['openclaw-code-index'].args = [cliPath, 'mcp'];
 await writeFile(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
 
-const localGitNexusBin = join(MONOREPO_ROOT, 'gitnexus', 'dist', 'cli', 'index.js');
-if (await exists(localGitNexusBin)) {
-  await writeFile(join(targetRoot, 'gitnexus-bin.txt'), `${localGitNexusBin}\n`);
+const vendoredGitNexusRoot = join(targetRoot, 'vendor', 'gitnexus');
+const vendoredGitNexusBin = join(vendoredGitNexusRoot, 'dist', 'cli', 'index.js');
+if (await exists(vendoredGitNexusBin)) {
+  await installVendoredGitNexusDependencies(vendoredGitNexusRoot);
+  await writeFile(join(targetRoot, 'gitnexus-bin.txt'), `${vendoredGitNexusBin}\n`);
+} else {
+  const localGitNexusBin = join(MONOREPO_ROOT, 'gitnexus', 'dist', 'cli', 'index.js');
+  if (await exists(localGitNexusBin)) {
+    await writeFile(join(targetRoot, 'gitnexus-bin.txt'), `${localGitNexusBin}\n`);
+  }
 }
 
 console.log('OpenClaw Code Index installed.');
@@ -78,5 +89,35 @@ async function exists(path) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function installVendoredGitNexusDependencies(cwd) {
+  if (!(await exists(join(cwd, 'package.json')))) return;
+  const result = spawnSync(
+    'npm',
+    ['install', '--omit=dev', '--ignore-scripts', '--package-lock=false'],
+    {
+      cwd,
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        npm_config_audit: 'false',
+        npm_config_fund: 'false',
+      },
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error('Failed to install vendored GitNexus runtime dependencies.');
+  }
+  const ladybugInstall = join(cwd, 'node_modules', '@ladybugdb', 'core', 'install.js');
+  if (await exists(ladybugInstall)) {
+    const native = spawnSync(process.execPath, [ladybugInstall], {
+      cwd: join(cwd, 'node_modules', '@ladybugdb', 'core'),
+      stdio: 'inherit',
+    });
+    if (native.status !== 0) {
+      throw new Error('Failed to install LadybugDB native runtime.');
+    }
   }
 }

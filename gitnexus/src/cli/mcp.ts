@@ -74,9 +74,22 @@ export const mcpCommand = async () => {
       'GitNexus: No indexed repos yet. Run `gitnexus analyze` in a git repo — the server will pick it up automatically.',
     );
   } else {
+    const openclawMode =
+      process.env.OPENCLAW_CODE_INDEX_MCP === '1' || process.env.GITNEXUS_MCP_READ_ONLY === '1';
+    const allowed = (process.env.OPENCLAW_CODE_INDEX_ALLOWED_REPOS || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const visibleRepos = openclawMode
+      ? repos.filter((repo) =>
+          allowed.length ? allowed.includes(repo.name) : /^openclaw(?:-|$)/u.test(repo.name),
+        )
+      : repos;
     logger.info(
-      { repoCount: repos.length, repos: repos.map((r) => r.name) },
-      'GitNexus: MCP server starting',
+      openclawMode
+        ? { repoCount: visibleRepos.length, mode: 'openclaw-code-index' }
+        : { repoCount: repos.length, repos: repos.map((r) => r.name) },
+      openclawMode ? 'OpenClaw Code Index MCP server starting' : 'GitNexus: MCP server starting',
     );
   }
 

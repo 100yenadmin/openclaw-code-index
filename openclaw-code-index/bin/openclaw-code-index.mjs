@@ -11,6 +11,7 @@ import {
   detectOpenClaw,
   ensureOpenClawCheckout,
   formatBootstrap,
+  readOpenClawIndexAliases,
   resolveGitNexusInvocation,
   runGitNexusAnalyze,
 } from '../lib/openclaw.mjs';
@@ -63,6 +64,7 @@ async function status(parsed) {
     active: detection.isOpenClaw,
     detection,
     cacheRoot: cacheRoot(),
+    indexedAliases: readOpenClawIndexAliases(),
   };
   if (parsed.json) console.log(JSON.stringify(payload, null, 2));
   else {
@@ -71,6 +73,11 @@ async function status(parsed) {
     console.log(`gitRoot: ${detection.gitRoot || 'unknown'}`);
     console.log(`branch: ${detection.branch || 'unknown'}`);
     console.log(`cacheRoot: ${cacheRoot()}`);
+    console.log(
+      `indexedAliases: ${payload.indexedAliases.length ? payload.indexedAliases.join(', ') : 'none'}`,
+    );
+    console.log('defaultIndex: openclaw-latest-release');
+    console.log('note: pass --repo explicitly for main, beta/ref, or local-worktree indexes.');
   }
   process.exitCode = 0;
 }
@@ -84,7 +91,8 @@ async function bootstrap(parsed) {
 
 async function mcp(parsed) {
   const repo = parsed.repo || 'openclaw-latest-release';
-  const gitnexus = resolveGitNexusInvocation();
+  const gitnexus = resolveGitNexusInvocation({ requirePatched: true });
+  const aliases = readOpenClawIndexAliases();
   await new Promise((resolve) => {
     const child = spawn(gitnexus.command, [...gitnexus.args, 'mcp'], {
       stdio: 'inherit',
@@ -94,6 +102,8 @@ async function mcp(parsed) {
         OPENCLAW_CODE_INDEX_DEFAULT_REPO: repo,
         GITNEXUS_MCP_READ_ONLY: '1',
         GITNEXUS_MCP_DEFAULT_REPO: repo,
+        GITNEXUS_READ_ONLY_NO_WAL_RECOVERY: '1',
+        ...(aliases.length ? { OPENCLAW_CODE_INDEX_ALLOWED_REPOS: aliases.join(',') } : {}),
       },
     });
     child.on('error', (error) => {
@@ -111,14 +121,15 @@ async function mcp(parsed) {
 async function prime(parsed) {
   const repo = parsed.repo || 'openclaw-latest-release';
   const tokens = parsePositiveInt(parsed.tokens || parsed.maxTokens || 8000, '--tokens');
-  const gitnexus = resolveGitNexusInvocation();
+  const gitnexus = resolveGitNexusInvocation({ requirePatched: true });
+  const aliases = readOpenClawIndexAliases();
   let commandArgs;
   if (parsed.query) {
     commandArgs = ['query', parsed.query, '--repo', repo, '--max-tokens', String(tokens)];
   } else if (parsed.symbol) {
     commandArgs = ['context', parsed.symbol, '--repo', repo, '--max-tokens', String(tokens)];
   } else if (parsed.impact) {
-    commandArgs = ['impact', parsed.impact, '--repo', repo];
+    commandArgs = ['impact', parsed.impact, '--repo', repo, '--max-tokens', String(tokens)];
   } else {
     throw new Error('prime requires --query, --symbol, or --impact.');
   }
@@ -130,6 +141,8 @@ async function prime(parsed) {
       OPENCLAW_CODE_INDEX_DEFAULT_REPO: repo,
       GITNEXUS_MCP_READ_ONLY: '1',
       GITNEXUS_MCP_DEFAULT_REPO: repo,
+      GITNEXUS_READ_ONLY_NO_WAL_RECOVERY: '1',
+      ...(aliases.length ? { OPENCLAW_CODE_INDEX_ALLOWED_REPOS: aliases.join(',') } : {}),
     },
   });
   const text = result.stdout || result.stderr;
@@ -195,7 +208,6 @@ async function uninstallAutoupdate() {
 async function installLaunchd(source) {
   const plistPath = join(homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
   await mkdir(dirname(plistPath), { recursive: true });
-  const gitnexusBin = resolveGitNexusBin();
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -204,7 +216,6 @@ async function installLaunchd(source) {
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    ${gitnexusBin ? `<key>GITNEXUS_BIN</key><string>${gitnexusBin}</string>` : ''}
   </dict>
   <key>ProgramArguments</key>
   <array>
@@ -229,17 +240,13 @@ async function installLaunchd(source) {
   console.log(`Installed launchd autoupdate: ${plistPath}`);
 }
 
-function resolveGitNexusBin() {
-  for (const candidate of ['/opt/homebrew/bin/gitnexus', '/usr/local/bin/gitnexus']) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
-
 function parsePositiveInt(value, label) {
-  const number = Number.parseInt(String(value), 10);
+  const number = Number(String(value));
   if (!Number.isInteger(number) || number <= 0) {
     throw new Error(`${label} must be a positive integer.`);
+  }
+  if (number > 50_000) {
+    throw new Error(`${label} must be 50000 or less.`);
   }
   return number;
 }
@@ -281,7 +288,7 @@ Description=OpenClaw Code Index refresh
 
 [Service]
 Type=oneshot
-ExecStart=${process.execPath} ${__filename} sync --source ${source}
+ExecStart=${quoteArg(process.execPath)} ${quoteArg(__filename)} sync --source ${source}
 `,
   );
   await writeFile(
@@ -313,7 +320,7 @@ async function uninstallSystemd() {
 }
 
 async function installCron(source) {
-  const line = `17 3 * * * ${process.execPath} ${__filename} sync --source ${source} >> ${join(cacheRoot(), 'autoupdate.log')} 2>&1 # ${LABEL}`;
+  const line = `17 3 * * * ${quoteArg(process.execPath)} ${quoteArg(__filename)} sync --source ${source} >> ${quoteArg(join(cacheRoot(), 'autoupdate.log'))} 2>&1 # ${LABEL}`;
   const current = await run('crontab', ['-l'], { timeoutMs: 10_000 });
   const lines = (current.stdout || '')
     .split(/\r?\n/u)
@@ -335,4 +342,8 @@ async function uninstallCron() {
   await writeFile(join(cacheRoot(), '.cron.tmp'), next);
   await run('crontab', [join(cacheRoot(), '.cron.tmp')], { timeoutMs: 10_000 });
   await rm(join(cacheRoot(), '.cron.tmp'), { force: true });
+}
+
+function quoteArg(value) {
+  return JSON.stringify(String(value));
 }

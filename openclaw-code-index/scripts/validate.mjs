@@ -6,12 +6,14 @@ const root = new URL('..', import.meta.url).pathname;
 const manifest = JSON.parse(
   readFileSync(join(root, 'codex-plugin', '.codex-plugin', 'plugin.json'), 'utf8'),
 );
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const mcp = JSON.parse(readFileSync(join(root, 'codex-plugin', '.mcp.json'), 'utf8'));
 const hooks = JSON.parse(readFileSync(join(root, 'codex-plugin', 'hooks.json'), 'utf8'));
 
 const failures = [];
 if (manifest.name !== 'openclaw-code-index')
   failures.push('plugin name must be openclaw-code-index');
+if (manifest.version !== pkg.version) failures.push('plugin version must match package version');
 if (manifest.interface?.displayName !== 'OpenClaw Code Index')
   failures.push('displayName must be OpenClaw Code Index');
 if (manifest.interface?.capabilities?.includes('Write'))

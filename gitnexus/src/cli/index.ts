@@ -214,6 +214,7 @@ program
   .option('-r, --repo <name>', 'Target repository')
   .option('--depth <n>', 'Max relationship depth (default: 3)')
   .option('--include-tests', 'Include test files in results')
+  .option('--max-tokens <n>', 'Truncate output to N estimated tokens')
   .action(createLazyAction(() => import('./tool.js'), 'impactCommand'));
 
 program
