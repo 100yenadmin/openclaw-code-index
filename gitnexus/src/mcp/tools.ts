@@ -132,6 +132,11 @@ SERVICE: optional monorepo path prefix (POSIX-style, case-sensitive segments). W
           description:
             'Optional monorepo service root (relative path, "/" separators). In group mode (@repo), prefix-matches symbol file paths; ignored for a normal repo name. Empty string is rejected server-side.',
         },
+        maxTokens: {
+          type: 'number',
+          description: 'Truncate the MCP response to approximately this many tokens.',
+          minimum: 1,
+        },
       },
       required: ['query'],
     },
@@ -240,6 +245,11 @@ SERVICE: optional monorepo path prefix (case-sensitive path segments). When "rep
           minLength: 1,
           description:
             'Optional monorepo service root (relative path). Applies in group mode (@repo) only; ignored for a normal repo name. Empty string is rejected server-side.',
+        },
+        maxTokens: {
+          type: 'number',
+          description: 'Truncate the MCP response to approximately this many tokens.',
+          minimum: 1,
         },
       },
       required: [],
@@ -422,6 +432,11 @@ SERVICE: optional monorepo path prefix (case-sensitive path segments). When "rep
           description: 'Alias of timeoutMs (milliseconds) when timeoutMs is omitted',
           minimum: 1,
           maximum: 3600000,
+        },
+        maxTokens: {
+          type: 'number',
+          description: 'Truncate the MCP response to approximately this many tokens.',
+          minimum: 1,
         },
       },
       required: ['target', 'direction'],

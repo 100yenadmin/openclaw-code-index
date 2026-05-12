@@ -19,7 +19,7 @@ part of the public `100yenadmin/openclaw-code-index` fork of
 5. Add GitNexus MCP to Codex CLI if desired:
 
    ```bash
-   codex mcp add openclaw-code-index -- npx -y gitnexus@latest mcp
+   codex mcp add openclaw-code-index -- node ~/.openclaw-code-index/installed/bin/openclaw-code-index.mjs mcp
    ```
 
 The installer stages a portable copy under `~/.openclaw-code-index/installed`
@@ -60,8 +60,9 @@ openclaw-code-index index --source local --path /path/to/openclaw
 
 Indexes are local. The tool clones/fetches OpenClaw directly from
 `openclaw/openclaw` into `~/.openclaw-code-index/repos/` and then runs
-`npx -y gitnexus@latest analyze --name <alias> --skills`. It does not depend on
-100yen infrastructure after installation.
+GitNexus analyze with the stable alias for that source. Set `GITNEXUS_BIN` to a
+specific GitNexus binary when you want to pin the forked CLI; otherwise the
+wrapper uses the first `gitnexus` on `PATH`.
 
 Full OpenClaw graph indexing is CPU and disk work on your machine. It does not
 spend model tokens unless you explicitly enable an embedding or LLM-backed
@@ -98,4 +99,18 @@ index.
   review, and shared-runtime edits.
 - Verify graph answers with source reads.
 - Treat stale indexes as hints, not proof.
-- Do not expose GitNexus mutation/refactor tools in v1.
+- Do not expose GitNexus mutation/refactor tools in v1. The wrapper MCP hides
+  mutation surfaces such as `rename` and `group_sync`.
+
+## Bounded Context Slices
+
+The plugin does not inject a generic 10k-token mini-index into every session.
+Agents should retrieve task-scoped context when needed:
+
+```bash
+openclaw-code-index prime --query "provider auth routing" --tokens 8000
+openclaw-code-index prime --symbol buildAgentRuntimeAuthPlan --tokens 5000
+openclaw-code-index prime --impact buildAgentRuntimeAuthPlan --tokens 10000
+```
+
+The OpenClaw MCP also accepts `maxTokens` on `query`, `context`, and `impact`.

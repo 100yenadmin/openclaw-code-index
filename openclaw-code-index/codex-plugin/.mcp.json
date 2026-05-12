@@ -2,8 +2,8 @@
   "mcpServers": {
     "openclaw-code-index": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "gitnexus@latest", "mcp"],
+      "command": "node",
+      "args": ["../bin/openclaw-code-index.mjs", "mcp"],
       "cwd": "."
     }
   }

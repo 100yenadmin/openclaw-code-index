@@ -28,6 +28,7 @@ import http from 'http';
 import { writeSync } from 'node:fs';
 import { LocalBackend } from '../mcp/local/local-backend.js';
 import { logger } from '../core/logger.js';
+import { parseMaxTokens, truncateToTokenBudget } from './token-budget.js';
 import { cliInfo, cliWarn } from './cli-message.js';
 
 export interface EvalServerOptions {
@@ -324,6 +325,25 @@ function getNextStepHint(toolName: string): string {
   }
 }
 
+export function isBearerAuthorized(
+  authToken: string | null,
+  authHeader: string | undefined,
+): boolean {
+  return !authToken || authHeader === `Bearer ${authToken}`;
+}
+
+export function formatHealthPayload(
+  repoNames: string[],
+  includeRepos: boolean,
+): {
+  status: 'ok';
+  repos?: string[];
+  auth?: 'required';
+} {
+  if (includeRepos) return { status: 'ok', repos: repoNames };
+  return { status: 'ok', auth: 'required' };
+}
+
 // ─── Server ───────────────────────────────────────────────────────────
 
 export async function evalServerCommand(options?: EvalServerOptions): Promise<void> {
@@ -349,6 +369,12 @@ export async function evalServerCommand(options?: EvalServerOptions): Promise<vo
     'GitNexus eval-server: repos loaded',
   );
 
+  // Bearer token auth — if GITNEXUS_AUTH_TOKEN is set, mutating/tool requests must authenticate.
+  const authToken = process.env.GITNEXUS_AUTH_TOKEN || null;
+  if (authToken) {
+    cliInfo('GitNexus eval-server: Bearer token auth enabled');
+  }
+
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   function resetIdleTimer() {
@@ -363,13 +389,31 @@ export async function evalServerCommand(options?: EvalServerOptions): Promise<vo
 
   const server = http.createServer(async (req, res) => {
     resetIdleTimer();
+    const authorized = isBearerAuthorized(authToken, req.headers.authorization);
 
     try {
       // Health check
       if (req.method === 'GET' && req.url === '/health') {
         res.setHeader('Content-Type', 'application/json');
         res.writeHead(200);
-        res.end(JSON.stringify({ status: 'ok', repos: repos.map((r) => r.name) }));
+        res.end(
+          JSON.stringify(
+            formatHealthPayload(
+              repos.map((r) => r.name),
+              authorized,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // Auth check — if GITNEXUS_AUTH_TOKEN is set, all non-health requests must authenticate.
+      if (!authorized) {
+        res.setHeader('Content-Type', 'application/json');
+        res.writeHead(401);
+        res.end(
+          JSON.stringify({ error: 'Unauthorized — set Authorization: Bearer <token> header' }),
+        );
         return;
       }
 
@@ -405,13 +449,27 @@ export async function evalServerCommand(options?: EvalServerOptions): Promise<vo
         }
 
         // Call tool, format result as text, append next-step hint
+        const maxTokens = parseMaxTokens(args.maxTokens);
+        delete args.maxTokens; // Don't pass to backend
+        if (maxTokens.error) {
+          res.setHeader('Content-Type', 'text/plain');
+          res.writeHead(400);
+          res.end(`Error: ${maxTokens.error}`);
+          return;
+        }
         const result = await backend.callTool(toolName, args);
-        const formatted = formatToolResult(toolName, result);
+        let formatted = formatToolResult(toolName, result);
         const hint = getNextStepHint(toolName);
+        formatted = formatted + hint;
+
+        // Apply token budget if specified
+        if (maxTokens.value) {
+          formatted = truncateToTokenBudget(formatted, maxTokens.value);
+        }
 
         res.setHeader('Content-Type', 'text/plain');
         res.writeHead(200);
-        res.end(formatted + hint);
+        res.end(formatted);
         return;
       }
 

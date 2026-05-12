@@ -158,6 +158,17 @@ describe('GITNEXUS_TOOLS', () => {
     }
   });
 
+  it('impact, query, and context expose optional maxTokens bounds', () => {
+    for (const n of ['impact', 'query', 'context'] as const) {
+      const tool = GITNEXUS_TOOLS.find((t) => t.name === n)!;
+      const maxTokens = tool.inputSchema.properties.maxTokens;
+      expect(maxTokens, n).toBeDefined();
+      expect(maxTokens!.type).toBe('number');
+      expect(maxTokens!.minimum).toBe(1);
+      expect(tool.inputSchema.required).not.toContain('maxTokens');
+    }
+  });
+
   it('impact schema bounds match cross-impact validation ranges', () => {
     const impact = GITNEXUS_TOOLS.find((t) => t.name === 'impact')!;
     expect(impact.inputSchema.properties.maxDepth.minimum).toBe(1);

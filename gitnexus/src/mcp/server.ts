@@ -27,6 +27,74 @@ import { GITNEXUS_TOOLS } from './tools.js';
 import { installGlobalStdoutSentinel } from './stdio-context.js';
 import type { LocalBackend } from './local/local-backend.js';
 import { getResourceDefinitions, getResourceTemplates, readResource } from './resources.js';
+import { parseMaxTokens, truncateToTokenBudget } from '../cli/token-budget.js';
+
+const OPENCLAW_READ_ONLY_TOOLS = new Set([
+  'list_repos',
+  'query',
+  'context',
+  'impact',
+  'detect_changes',
+  'cypher',
+]);
+const BUDGETED_TOOLS = new Set(['query', 'context', 'impact']);
+
+function openclawReadOnlyMode(): boolean {
+  return process.env.OPENCLAW_CODE_INDEX_MCP === '1' || process.env.GITNEXUS_MCP_READ_ONLY === '1';
+}
+
+function defaultRepo(): string {
+  return (
+    process.env.OPENCLAW_CODE_INDEX_DEFAULT_REPO || process.env.GITNEXUS_MCP_DEFAULT_REPO || ''
+  );
+}
+
+function openclawRepoAllowed(repo: string): boolean {
+  return /^openclaw(?:-|$)/u.test(repo);
+}
+
+function normalizeArgsForOpenClaw(toolName: string, args: Record<string, any> | undefined) {
+  const normalized = { ...(args || {}) };
+  if (toolName !== 'list_repos' && !normalized.repo && defaultRepo()) {
+    normalized.repo = defaultRepo();
+  }
+  return normalized;
+}
+
+function assertOpenClawReadOnlyCall(toolName: string, args: Record<string, any> | undefined) {
+  if (!openclawReadOnlyMode()) return;
+  if (!OPENCLAW_READ_ONLY_TOOLS.has(toolName)) {
+    throw new Error(`Tool "${toolName}" is not available in OpenClaw Code Index read-only mode.`);
+  }
+  const repo = typeof args?.repo === 'string' ? args.repo : '';
+  if (repo && !repo.startsWith('@') && !openclawRepoAllowed(repo)) {
+    throw new Error(`Repo "${repo}" is not an OpenClaw Code Index alias.`);
+  }
+}
+
+function assertOpenClawReadOnlyResource(uri: string) {
+  if (!openclawReadOnlyMode()) return;
+  const match = /^gitnexus:\/\/repo\/([^/]+)/u.exec(uri);
+  if (match && !openclawRepoAllowed(decodeURIComponent(match[1]))) {
+    throw new Error(
+      `Resource repo "${decodeURIComponent(match[1])}" is not an OpenClaw Code Index alias.`,
+    );
+  }
+  if (/^gitnexus:\/\/group\//u.test(uri)) {
+    throw new Error('Group resources are not available in OpenClaw Code Index read-only mode.');
+  }
+}
+
+function applyTokenBudget(
+  toolName: string,
+  args: Record<string, any> | undefined,
+  text: string,
+): string {
+  if (!BUDGETED_TOOLS.has(toolName)) return text;
+  const parsed = parseMaxTokens(args?.maxTokens);
+  if (parsed.error) throw new Error(`maxTokens ${parsed.error}`);
+  return parsed.value ? truncateToTokenBudget(text, parsed.value) : text;
+}
 
 /**
  * Next-step hints appended to tool responses.
@@ -129,6 +197,7 @@ export function createMCPServer(backend: LocalBackend): Server {
     const { uri } = request.params;
 
     try {
+      assertOpenClawReadOnlyResource(uri);
       const content = await readResource(uri, backend);
       return {
         contents: [
@@ -154,7 +223,9 @@ export function createMCPServer(backend: LocalBackend): Server {
 
   // Handle list tools request
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: GITNEXUS_TOOLS.map((tool) => ({
+    tools: GITNEXUS_TOOLS.filter(
+      (tool) => !openclawReadOnlyMode() || OPENCLAW_READ_ONLY_TOOLS.has(tool.name),
+    ).map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -167,15 +238,21 @@ export function createMCPServer(backend: LocalBackend): Server {
     const { name, arguments: args } = request.params;
 
     try {
-      const result = await backend.callTool(name, args);
+      const normalizedArgs = normalizeArgsForOpenClaw(
+        name,
+        args as Record<string, any> | undefined,
+      );
+      assertOpenClawReadOnlyCall(name, normalizedArgs);
+      const result = await backend.callTool(name, normalizedArgs);
       const resultText = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-      const hint = getNextStepHint(name, args as Record<string, any> | undefined);
+      const hint = getNextStepHint(name, normalizedArgs as Record<string, any> | undefined);
+      const responseText = applyTokenBudget(name, normalizedArgs, resultText + hint);
 
       return {
         content: [
           {
             type: 'text',
-            text: resultText + hint,
+            text: responseText,
           },
         ],
       };

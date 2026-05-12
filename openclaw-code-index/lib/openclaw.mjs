@@ -1,11 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { run } from './process.mjs';
 
 export const OPENCLAW_REPO = 'https://github.com/openclaw/openclaw.git';
 export const OPENCLAW_API = 'https://api.github.com/repos/openclaw/openclaw';
+const __filename = fileURLToPath(import.meta.url);
 
 export function cacheRoot() {
   return resolve(process.env.OPENCLAW_CODE_INDEX_HOME || join(homedir(), '.openclaw-code-index'));
@@ -171,8 +173,9 @@ export async function runGitNexusAnalyze({
   force = false,
   skills = true,
 }) {
-  const command = process.env.GITNEXUS_BIN || 'npx';
-  const args = process.env.GITNEXUS_BIN ? ['analyze'] : ['-y', 'gitnexus@latest', 'analyze'];
+  const gitnexus = resolveGitNexusInvocation();
+  const command = gitnexus.command;
+  const args = [...gitnexus.args, 'analyze'];
   if (alias) args.push('--name', alias);
   if (skills) args.push('--skills');
   if (embeddings) args.push('--embeddings');
@@ -183,6 +186,27 @@ export async function runGitNexusAnalyze({
     maxBytes: 4 * 1024 * 1024,
     env: { GITNEXUS_SKIP_OPTIONAL_GRAMMARS: process.env.GITNEXUS_SKIP_OPTIONAL_GRAMMARS || '1' },
   });
+}
+
+export function resolveGitNexusInvocation() {
+  if (process.env.GITNEXUS_BIN) return { command: process.env.GITNEXUS_BIN, args: [] };
+  const configured = readGitNexusBinConfig();
+  if (configured) return { command: process.execPath, args: [configured] };
+  const localDist = resolve(
+    join(new URL('../..', import.meta.url).pathname, 'gitnexus', 'dist', 'cli', 'index.js'),
+  );
+  if (existsSync(localDist)) return { command: process.execPath, args: [localDist] };
+  return { command: 'gitnexus', args: [] };
+}
+
+function readGitNexusBinConfig() {
+  const configPath = join(dirname(__filename), '..', 'gitnexus-bin.txt');
+  try {
+    const configured = readFileSync(configPath, 'utf8').trim();
+    return configured && existsSync(configured) ? configured : null;
+  } catch {
+    return null;
+  }
 }
 
 function analyzeTimeoutMs() {

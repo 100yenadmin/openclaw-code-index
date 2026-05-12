@@ -32,9 +32,11 @@ Use `--source main`, `--source ref --ref <tag-or-sha>`, or `--source local --pat
 
 ## GitNexus Workflow
 
-- For unfamiliar areas: `gitnexus query "<concept or behavior>"`
-- For a symbol: `gitnexus context <symbolName>`
-- Before modifying a symbol: `gitnexus impact <symbolName>`
+- For unfamiliar areas: use MCP `query` with `repo: "openclaw-latest-release"` unless a different OpenClaw alias is required.
+- For a symbol: use MCP `context` with the OpenClaw repo alias.
+- Before modifying a symbol: use MCP `impact` with `direction: "upstream"`.
+- Use `maxTokens` on `query`, `context`, or `impact` when you need a bounded slice.
+- From a terminal, use `openclaw-code-index prime --query|--symbol|--impact ... --tokens <n>` for task-scoped context.
 - For process traces: use GitNexus MCP resources for indexed processes.
 
 ## High-Blast-Radius Areas

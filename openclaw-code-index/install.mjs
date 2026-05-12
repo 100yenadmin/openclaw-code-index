@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const ROOT = dirname(__filename);
+const MONOREPO_ROOT = resolve(ROOT, '..');
 const homeRoot = resolve(
   process.env.OPENCLAW_CODE_INDEX_HOME || join(homedir(), '.openclaw-code-index'),
 );
@@ -52,10 +53,30 @@ const hooks = JSON.parse(await readFile(hooksPath, 'utf8'));
 hooks.hooks.SessionStart[0].hooks[0].command = `node ${JSON.stringify(cliPath)} bootstrap --cwd "${'${CODEX_WORKSPACE:-${PWD}}'}" --quiet`;
 await writeFile(hooksPath, `${JSON.stringify(hooks, null, 2)}\n`);
 
+const mcpPath = join(targetRoot, 'codex-plugin', '.mcp.json');
+const mcp = JSON.parse(await readFile(mcpPath, 'utf8'));
+mcp.mcpServers['openclaw-code-index'].command = 'node';
+mcp.mcpServers['openclaw-code-index'].args = [cliPath, 'mcp'];
+await writeFile(mcpPath, `${JSON.stringify(mcp, null, 2)}\n`);
+
+const localGitNexusBin = join(MONOREPO_ROOT, 'gitnexus', 'dist', 'cli', 'index.js');
+if (await exists(localGitNexusBin)) {
+  await writeFile(join(targetRoot, 'gitnexus-bin.txt'), `${localGitNexusBin}\n`);
+}
+
 console.log('OpenClaw Code Index installed.');
 console.log(`Codex Desktop plugin path: ${join(targetRoot, 'codex-plugin')}`);
 console.log(`CLI path: ${pathShim}`);
 console.log(`Add to PATH if needed: export PATH="${pathBin}:$PATH"`);
 console.log('');
 console.log('Optional Codex CLI MCP setup:');
-console.log('codex mcp add openclaw-code-index -- npx -y gitnexus@latest mcp');
+console.log(`codex mcp add openclaw-code-index -- node ${JSON.stringify(cliPath)} mcp`);
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}

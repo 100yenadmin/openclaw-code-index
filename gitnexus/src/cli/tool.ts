@@ -17,6 +17,7 @@
 
 import { writeSync } from 'node:fs';
 import { LocalBackend } from '../mcp/local/local-backend.js';
+import { parseMaxTokens, truncateToTokenBudget } from './token-budget.js';
 import { cliError } from './cli-message.js';
 
 let _backend: LocalBackend | null = null;
@@ -65,10 +66,16 @@ export async function queryCommand(
     goal?: string;
     limit?: string;
     content?: boolean;
+    maxTokens?: string;
   },
 ): Promise<void> {
   if (!queryText?.trim()) {
     cliError('Usage: gitnexus query <search_query>');
+    process.exit(1);
+  }
+  const maxTokens = parseMaxTokens(options?.maxTokens);
+  if (maxTokens.error) {
+    cliError(`  --max-tokens ${maxTokens.error}\n`);
     process.exit(1);
   }
 
@@ -81,7 +88,11 @@ export async function queryCommand(
     include_content: options?.content ?? false,
     repo: options?.repo,
   });
-  output(result);
+  let text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  if (maxTokens.value) {
+    text = truncateToTokenBudget(text, maxTokens.value);
+  }
+  output(text);
 }
 
 export async function contextCommand(
@@ -91,10 +102,16 @@ export async function contextCommand(
     file?: string;
     uid?: string;
     content?: boolean;
+    maxTokens?: string;
   },
 ): Promise<void> {
   if (!name?.trim() && !options?.uid) {
     cliError('Usage: gitnexus context <symbol_name> [--uid <uid>] [--file <path>]');
+    process.exit(1);
+  }
+  const maxTokens = parseMaxTokens(options?.maxTokens);
+  if (maxTokens.error) {
+    cliError(`  --max-tokens ${maxTokens.error}\n`);
     process.exit(1);
   }
 
@@ -106,7 +123,11 @@ export async function contextCommand(
     include_content: options?.content ?? false,
     repo: options?.repo,
   });
-  output(result);
+  let text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  if (maxTokens.value) {
+    text = truncateToTokenBudget(text, maxTokens.value);
+  }
+  output(text);
 }
 
 export async function impactCommand(

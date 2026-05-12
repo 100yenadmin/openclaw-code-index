@@ -22,10 +22,10 @@ if (manifest.mcpServers !== './.mcp.json') failures.push('plugin must reference 
 if (manifest.hooks !== './hooks.json') failures.push('plugin must reference ./hooks.json');
 if (!mcp.mcpServers?.['openclaw-code-index'])
   failures.push('MCP server openclaw-code-index missing');
-if (mcp.mcpServers?.['openclaw-code-index']?.command !== 'npx')
-  failures.push('MCP command must default to npx');
-if (!JSON.stringify(mcp).includes('gitnexus@latest'))
-  failures.push('MCP must use gitnexus@latest by default');
+if (mcp.mcpServers?.['openclaw-code-index']?.command !== 'node')
+  failures.push('MCP command must use the OpenClaw wrapper');
+if (!JSON.stringify(mcp).includes('openclaw-code-index.mjs'))
+  failures.push('MCP must launch openclaw-code-index mcp');
 if (!hooks.hooks?.SessionStart) failures.push('SessionStart hook missing');
 
 if (failures.length) {
