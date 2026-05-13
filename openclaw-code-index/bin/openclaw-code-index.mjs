@@ -125,7 +125,22 @@ async function prime(parsed) {
   const aliases = readOpenClawIndexAliases();
   let commandArgs;
   if (parsed.query) {
-    commandArgs = ['query', parsed.query, '--repo', repo, '--max-tokens', String(tokens)];
+    // The underlying `gitnexus query` defaults to --limit 5 processes,
+    // which yields ~1.8 KB regardless of --max-tokens. Scale --limit with
+    // the token budget so larger requests actually grow the slice instead
+    // of just acting as a cap. Empirically each process contributes
+    // ~300-500 tokens (process header + symbols + file paths).
+    const queryLimit = scaleQueryLimitForBudget(tokens);
+    commandArgs = [
+      'query',
+      parsed.query,
+      '--repo',
+      repo,
+      '--max-tokens',
+      String(tokens),
+      '--limit',
+      String(queryLimit),
+    ];
   } else if (parsed.symbol) {
     commandArgs = ['context', parsed.symbol, '--repo', repo, '--max-tokens', String(tokens)];
   } else if (parsed.impact) {
@@ -148,6 +163,25 @@ async function prime(parsed) {
   const text = result.stdout || result.stderr;
   process.stdout.write(truncateToTokenBudget(text, tokens));
   process.exitCode = result.ok ? 0 : result.code || 1;
+}
+
+/**
+ * Choose a `gitnexus query --limit` value sized to the prime token budget.
+ *
+ * gitnexus query defaults to limit=5 processes, which produces roughly
+ * 1.8 KB / ~450 tokens. Without scaling, asking prime for an 8k or 16k
+ * budget returns the same compact slice — --max-tokens just acts as a
+ * cap. Scaling --limit with the budget lets larger budgets actually
+ * surface more related execution flows.
+ *
+ * The cap of 30 keeps responses navigable; beyond ~30 processes the
+ * graph rarely has more rank-meaningful flows for one query.
+ */
+function scaleQueryLimitForBudget(tokens) {
+  if (tokens <= 4000) return 5;
+  if (tokens <= 8000) return 10;
+  if (tokens <= 16000) return 20;
+  return Math.min(Math.floor(tokens / 600), 30);
 }
 
 async function index(parsed) {
