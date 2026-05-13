@@ -95,12 +95,13 @@ interface EmbeddingItem {
  * @param apiKey - Bearer token (only used in Authorization header)
  * @param batchIndex - Logical batch number (for error context)
  * @param dimensions - Optional output-vector size. When provided, sent as
- *   the `dimensions` field in the request body. Endpoints that implement
- *   Matryoshka truncation (OpenAI text-embedding-3-*, Cohere embed-v3,
- *   Voyage) return a truncated vector at that size; endpoints that do not
- *   recognise the field may ignore it or return 400. Leave
- *   `GITNEXUS_EMBEDDING_DIMS` unset for strict backends that reject
- *   unknown fields.
+ *   the appropriate Matryoshka field for the host:
+ *     - `dimensions` for OpenAI text-embedding-3-* / Cohere embed-v3 /
+ *       openai-compatible endpoints
+ *     - `output_dimension` for Voyage (voyageai.com)
+ *   Endpoints that do not implement Matryoshka either ignore the field
+ *   (200) or return 400. Leave `GITNEXUS_EMBEDDING_DIMS` unset for strict
+ *   backends that reject unknown fields.
  */
 const httpEmbedBatch = async (
   url: string,
@@ -110,12 +111,25 @@ const httpEmbedBatch = async (
   batchIndex = 0,
   dimensions?: number,
 ): Promise<EmbeddingItem[]> => {
-  const requestBody: { input: string[]; model: string; dimensions?: number } = {
+  const requestBody: {
+    input: string[];
+    model: string;
+    dimensions?: number;
+    output_dimension?: number;
+  } = {
     input: batch,
     model,
   };
   if (dimensions !== undefined) {
-    requestBody.dimensions = dimensions;
+    // OpenAI / Cohere use `dimensions`; Voyage uses `output_dimension` and
+    // rejects unknown fields with HTTP 400 (verified against
+    // api.voyageai.com/v1/embeddings on 2026-05-13). Branch on host so each
+    // provider gets the right Matryoshka knob.
+    if (url.includes('voyageai.com')) {
+      requestBody.output_dimension = dimensions;
+    } else {
+      requestBody.dimensions = dimensions;
+    }
   }
 
   let resp: Response;
