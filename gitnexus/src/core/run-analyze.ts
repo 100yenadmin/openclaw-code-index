@@ -29,6 +29,7 @@ import {
   ensureGitNexusIgnored,
   registerRepo,
   cleanupOldKuzuFiles,
+  type RepoMeta,
 } from '../storage/repo-manager.js';
 import {
   getCurrentCommit,
@@ -179,7 +180,18 @@ export async function runFullAnalysis(
   const existingMeta = await loadMeta(storagePath);
 
   // ── Early-return: already up to date ──────────────────────────────
-  if (existingMeta && !options.force && existingMeta.lastCommit === currentCommit) {
+  // Skip this branch for checkpoint metas (mid-analyze writes). They satisfy
+  // `lastCommit === currentCommit` because the commit didn't change between
+  // the killed run and this one, but the index is *not* complete — the prior
+  // run died before the final `saveMeta` and only partial embeddings made it
+  // into lbug. Falling through here lets the cache-load + skip-by-content-hash
+  // logic below resume the embedding pipeline from where it stopped.
+  if (
+    existingMeta &&
+    !existingMeta.checkpoint &&
+    !options.force &&
+    existingMeta.lastCommit === currentCommit
+  ) {
     // Non-git folders have currentCommit = '' — always rebuild since we can't detect changes
     if (currentCommit !== '') {
       await ensureGitNexusIgnored(repoPath);
@@ -400,6 +412,33 @@ export async function runFullAnalysis(
         getInferredRepoName(repoPath) ??
         path.basename(resolveRepoIdentityRoot(repoPath));
       const serverName = await readServerMapping(projectName);
+      // Checkpoint meta.json every N embedded nodes so a kill / crash /
+      // power-loss mid-embedding leaves a resumable index instead of
+      // unreachable partial data. The marker `checkpoint: true` causes the
+      // up-to-date early-return above to fall through on the next run, and
+      // `loadCachedEmbeddings` reads whatever made it into lbug — only the
+      // un-embedded tail then gets sent to the embedding endpoint.
+      const CHECKPOINT_EVERY = 5_000;
+      let lastCheckpointAt = 0;
+      const writeCheckpoint = (nodesProcessed: number): void => {
+        const checkpointMeta: RepoMeta = {
+          repoPath,
+          lastCommit: currentCommit,
+          indexedAt: new Date().toISOString(),
+          remoteUrl: hasGitDir(repoPath) ? getRemoteUrl(repoPath) : undefined,
+          stats: {
+            files: pipelineResult.totalFileCount,
+            nodes: stats.nodes,
+            edges: stats.edges,
+            embeddings: nodesProcessed,
+          },
+          checkpoint: true,
+        };
+        // Fire-and-forget. saveMeta is a single writeFile; if it fails we
+        // lose checkpoint granularity, not the run itself.
+        void saveMeta(storagePath, checkpointMeta).catch(() => undefined);
+      };
+
       const embeddingResult = await runEmbeddingPipeline(
         executeQuery,
         executeWithReusedStatement,
@@ -412,6 +451,17 @@ export async function runFullAnalysis(
                 : 'Loading embedding model...'
               : `Embedding ${p.nodesProcessed || 0}/${p.totalNodes || '?'}`;
           progress('embeddings', scaled, label);
+
+          // Checkpoint after every CHECKPOINT_EVERY nodes processed past
+          // the last write. Loading-model phase doesn't have a node count.
+          if (
+            p.phase !== 'loading-model' &&
+            typeof p.nodesProcessed === 'number' &&
+            p.nodesProcessed - lastCheckpointAt >= CHECKPOINT_EVERY
+          ) {
+            lastCheckpointAt = p.nodesProcessed;
+            writeCheckpoint(p.nodesProcessed);
+          }
         },
         {},
         cachedEmbeddingNodeIds.size > 0 ? cachedEmbeddingNodeIds : undefined,
