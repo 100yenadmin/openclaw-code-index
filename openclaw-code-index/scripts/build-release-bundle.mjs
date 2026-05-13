@@ -33,7 +33,11 @@ for (const item of [
 }
 
 await mkdir(join(bundleRoot, 'vendor', 'gitnexus'), { recursive: true });
-for (const item of ['dist', 'package.json', 'package-lock.json', 'vendor']) {
+// `scripts` is needed at install/runtime: gitnexus loads
+// scripts/install-duckdb-extension.mjs to install the DuckDB VECTOR
+// extension; omitting it leaves bundle users on the (much slower)
+// exact-scan fallback for semantic queries.
+for (const item of ['dist', 'scripts', 'package.json', 'package-lock.json', 'vendor']) {
   const source = join(gitnexusRoot, item);
   if (existsSync(source)) {
     await cp(source, join(bundleRoot, 'vendor', 'gitnexus', item), { recursive: true });
