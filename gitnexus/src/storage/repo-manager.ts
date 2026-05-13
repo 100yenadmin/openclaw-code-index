@@ -71,6 +71,18 @@ export interface RepoMeta {
     processes?: number;
     embeddings?: number;
   };
+  /**
+   * When `true`, this meta.json was written mid-analyze as a checkpoint
+   * (e.g., every N embedded nodes) rather than at the successful
+   * completion of `runFullAnalysis`. The "already up to date" early-return
+   * skips checkpoints so a killed-mid-embed run is resumed by the next
+   * `analyze` invocation: cached embeddings get loaded from lbug and only
+   * un-embedded nodes are sent to the embedding endpoint.
+   *
+   * The final save at the end of `runFullAnalysis` omits this field, so a
+   * fully-completed index is treated as authoritative.
+   */
+  checkpoint?: boolean;
 }
 
 export interface IndexedRepo {

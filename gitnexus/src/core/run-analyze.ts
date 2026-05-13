@@ -29,6 +29,7 @@ import {
   ensureGitNexusIgnored,
   registerRepo,
   cleanupOldKuzuFiles,
+  type RepoMeta,
 } from '../storage/repo-manager.js';
 import {
   getCurrentCommit,
@@ -179,7 +180,18 @@ export async function runFullAnalysis(
   const existingMeta = await loadMeta(storagePath);
 
   // ── Early-return: already up to date ──────────────────────────────
-  if (existingMeta && !options.force && existingMeta.lastCommit === currentCommit) {
+  // Skip this branch for checkpoint metas (mid-analyze writes). They satisfy
+  // `lastCommit === currentCommit` because the commit didn't change between
+  // the killed run and this one, but the index is *not* complete — the prior
+  // run died before the final `saveMeta` and only partial embeddings made it
+  // into lbug. Falling through here lets the cache-load + skip-by-content-hash
+  // logic below resume the embedding pipeline from where it stopped.
+  if (
+    existingMeta &&
+    !existingMeta.checkpoint &&
+    !options.force &&
+    existingMeta.lastCommit === currentCommit
+  ) {
     // Non-git folders have currentCommit = '' — always rebuild since we can't detect changes
     if (currentCommit !== '') {
       await ensureGitNexusIgnored(repoPath);
@@ -400,6 +412,43 @@ export async function runFullAnalysis(
         getInferredRepoName(repoPath) ??
         path.basename(resolveRepoIdentityRoot(repoPath));
       const serverName = await readServerMapping(projectName);
+      // Checkpoint meta.json every N embedded nodes so a kill / crash /
+      // power-loss mid-embedding leaves a resumable index instead of
+      // unreachable partial data. The marker `checkpoint: true` causes the
+      // up-to-date early-return above to fall through on the next run, and
+      // `loadCachedEmbeddings` reads whatever made it into lbug — only the
+      // un-embedded tail then gets sent to the embedding endpoint.
+      const CHECKPOINT_EVERY = 5_000;
+      let lastCheckpointAt = 0;
+      // Serialize checkpoint writes through this Promise so we can flush
+      // pending writes before the final `saveMeta` at finalize. Without
+      // serialization, a fire-and-forget checkpoint can land AFTER the
+      // final save and clobber it with `checkpoint: true`, triggering a
+      // bogus resume on the next analyze run.
+      let pendingCheckpoint: Promise<void> = Promise.resolve();
+      const writeCheckpoint = (nodesProcessed: number): void => {
+        const checkpointMeta: RepoMeta = {
+          repoPath,
+          lastCommit: currentCommit,
+          indexedAt: new Date().toISOString(),
+          remoteUrl: hasGitDir(repoPath) ? getRemoteUrl(repoPath) : undefined,
+          stats: {
+            files: pipelineResult.totalFileCount,
+            nodes: stats.nodes,
+            edges: stats.edges,
+            embeddings: nodesProcessed,
+          },
+          checkpoint: true,
+        };
+        // Chain through pendingCheckpoint so writes are serialized AND we
+        // have something to await at finalize. Catch on each link so one
+        // failed write doesn't poison subsequent ones.
+        pendingCheckpoint = pendingCheckpoint
+          .catch(() => undefined)
+          .then(() => saveMeta(storagePath, checkpointMeta))
+          .catch(() => undefined);
+      };
+
       const embeddingResult = await runEmbeddingPipeline(
         executeQuery,
         executeWithReusedStatement,
@@ -412,6 +461,17 @@ export async function runFullAnalysis(
                 : 'Loading embedding model...'
               : `Embedding ${p.nodesProcessed || 0}/${p.totalNodes || '?'}`;
           progress('embeddings', scaled, label);
+
+          // Checkpoint after every CHECKPOINT_EVERY nodes processed past
+          // the last write. Loading-model phase doesn't have a node count.
+          if (
+            p.phase !== 'loading-model' &&
+            typeof p.nodesProcessed === 'number' &&
+            p.nodesProcessed - lastCheckpointAt >= CHECKPOINT_EVERY
+          ) {
+            lastCheckpointAt = p.nodesProcessed;
+            writeCheckpoint(p.nodesProcessed);
+          }
         },
         {},
         cachedEmbeddingNodeIds.size > 0 ? cachedEmbeddingNodeIds : undefined,
@@ -427,6 +487,11 @@ export async function runFullAnalysis(
       } else {
         semanticMode = 'vector-index';
       }
+
+      // Drain any in-flight checkpoint write before the final saveMeta below.
+      // Without this, a late-landing checkpoint can clobber the authoritative
+      // meta with `checkpoint: true` and trigger a bogus resume next run.
+      await pendingCheckpoint.catch(() => undefined);
     }
 
     // ── Phase 5: Finalize (98–100%) ───────────────────────────────────
