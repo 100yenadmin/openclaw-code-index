@@ -230,9 +230,7 @@ export function readOpenClawIndexAliases() {
     .map((s) => s.trim())
     .filter(Boolean);
   if (extra.length > 0) {
-    const registryNames = new Set(
-      registry.map((entry) => entry?.name).filter(Boolean),
-    );
+    const registryNames = new Set(registry.map((entry) => entry?.name).filter(Boolean));
     const aliasSet = new Set(aliases);
     for (const name of extra) {
       if (registryNames.has(name) && !aliasSet.has(name)) {
