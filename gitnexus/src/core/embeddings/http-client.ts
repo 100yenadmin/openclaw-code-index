@@ -123,9 +123,23 @@ const httpEmbedBatch = async (
   if (dimensions !== undefined) {
     // OpenAI / Cohere use `dimensions`; Voyage uses `output_dimension` and
     // rejects unknown fields with HTTP 400 (verified against
-    // api.voyageai.com/v1/embeddings on 2026-05-13). Branch on host so each
-    // provider gets the right Matryoshka knob.
-    if (url.includes('voyageai.com')) {
+    // api.voyageai.com/v1/embeddings on 2026-05-13). Branch on hostname so
+    // each provider gets the right Matryoshka knob.
+    //
+    // Use URL parsing rather than `url.includes('voyageai.com')`: a substring
+    // check would also match path components, query strings, and adversarial
+    // hosts like `https://evil.example.com/voyageai.com/...` (the CodeQL
+    // "Incomplete URL substring sanitization" pattern). Hostname suffix-match
+    // is the safe form.
+    let host = '';
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch {
+      // Malformed URL falls through to the OpenAI-style default; the fetch
+      // below will fail on its own and surface the real error.
+    }
+    const isVoyageHost = host === 'voyageai.com' || host.endsWith('.voyageai.com');
+    if (isVoyageHost) {
       requestBody.output_dimension = dimensions;
     } else {
       requestBody.dimensions = dimensions;
