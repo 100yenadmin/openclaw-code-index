@@ -213,11 +213,34 @@ export function resolveGitNexusInvocation(options = {}) {
 
 export function readOpenClawIndexAliases() {
   const registry = readGitNexusRegistry();
-  return registry
+  const aliases = registry
     .filter((entry) => isOpenClawRegistryEntry(entry))
     .map((entry) => entry.name)
-    .filter(Boolean)
-    .sort();
+    .filter(Boolean);
+
+  // Allow users with mixed-repo workflows to opt extra registered repos into
+  // the MCP's allowed-list without forking this filter or standing up a
+  // separate MCP entry per repo. Set OPENCLAW_CODE_INDEX_EXTRA_REPOS to a
+  // comma-separated list of registered alias names:
+  //   OPENCLAW_CODE_INDEX_EXTRA_REPOS=lossless-claw,hermes-agent
+  // Entries are silently ignored if not actually present in the gitnexus
+  // registry, so a stale env var doesn't break MCP startup.
+  const extra = (process.env.OPENCLAW_CODE_INDEX_EXTRA_REPOS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (extra.length > 0) {
+    const registryNames = new Set(registry.map((entry) => entry?.name).filter(Boolean));
+    const aliasSet = new Set(aliases);
+    for (const name of extra) {
+      if (registryNames.has(name) && !aliasSet.has(name)) {
+        aliases.push(name);
+        aliasSet.add(name);
+      }
+    }
+  }
+
+  return aliases.sort();
 }
 
 function readGitNexusRegistry() {
