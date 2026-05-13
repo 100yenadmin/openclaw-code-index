@@ -420,6 +420,12 @@ export async function runFullAnalysis(
       // un-embedded tail then gets sent to the embedding endpoint.
       const CHECKPOINT_EVERY = 5_000;
       let lastCheckpointAt = 0;
+      // Serialize checkpoint writes through this Promise so we can flush
+      // pending writes before the final `saveMeta` at finalize. Without
+      // serialization, a fire-and-forget checkpoint can land AFTER the
+      // final save and clobber it with `checkpoint: true`, triggering a
+      // bogus resume on the next analyze run.
+      let pendingCheckpoint: Promise<void> = Promise.resolve();
       const writeCheckpoint = (nodesProcessed: number): void => {
         const checkpointMeta: RepoMeta = {
           repoPath,
@@ -434,9 +440,13 @@ export async function runFullAnalysis(
           },
           checkpoint: true,
         };
-        // Fire-and-forget. saveMeta is a single writeFile; if it fails we
-        // lose checkpoint granularity, not the run itself.
-        void saveMeta(storagePath, checkpointMeta).catch(() => undefined);
+        // Chain through pendingCheckpoint so writes are serialized AND we
+        // have something to await at finalize. Catch on each link so one
+        // failed write doesn't poison subsequent ones.
+        pendingCheckpoint = pendingCheckpoint
+          .catch(() => undefined)
+          .then(() => saveMeta(storagePath, checkpointMeta))
+          .catch(() => undefined);
       };
 
       const embeddingResult = await runEmbeddingPipeline(
@@ -477,6 +487,11 @@ export async function runFullAnalysis(
       } else {
         semanticMode = 'vector-index';
       }
+
+      // Drain any in-flight checkpoint write before the final saveMeta below.
+      // Without this, a late-landing checkpoint can clobber the authoritative
+      // meta with `checkpoint: true` and trigger a bogus resume next run.
+      await pendingCheckpoint.catch(() => undefined);
     }
 
     // ── Phase 5: Finalize (98–100%) ───────────────────────────────────
