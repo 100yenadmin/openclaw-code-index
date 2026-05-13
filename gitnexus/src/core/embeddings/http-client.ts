@@ -95,12 +95,13 @@ interface EmbeddingItem {
  * @param apiKey - Bearer token (only used in Authorization header)
  * @param batchIndex - Logical batch number (for error context)
  * @param dimensions - Optional output-vector size. When provided, sent as
- *   the `dimensions` field in the request body. Endpoints that implement
- *   Matryoshka truncation (OpenAI text-embedding-3-*, Cohere embed-v3,
- *   Voyage) return a truncated vector at that size; endpoints that do not
- *   recognise the field may ignore it or return 400. Leave
- *   `GITNEXUS_EMBEDDING_DIMS` unset for strict backends that reject
- *   unknown fields.
+ *   the appropriate Matryoshka field for the host:
+ *     - `dimensions` for OpenAI text-embedding-3-* / Cohere embed-v3 /
+ *       openai-compatible endpoints
+ *     - `output_dimension` for Voyage (voyageai.com)
+ *   Endpoints that do not implement Matryoshka either ignore the field
+ *   (200) or return 400. Leave `GITNEXUS_EMBEDDING_DIMS` unset for strict
+ *   backends that reject unknown fields.
  */
 const httpEmbedBatch = async (
   url: string,
@@ -110,12 +111,39 @@ const httpEmbedBatch = async (
   batchIndex = 0,
   dimensions?: number,
 ): Promise<EmbeddingItem[]> => {
-  const requestBody: { input: string[]; model: string; dimensions?: number } = {
+  const requestBody: {
+    input: string[];
+    model: string;
+    dimensions?: number;
+    output_dimension?: number;
+  } = {
     input: batch,
     model,
   };
   if (dimensions !== undefined) {
-    requestBody.dimensions = dimensions;
+    // OpenAI / Cohere use `dimensions`; Voyage uses `output_dimension` and
+    // rejects unknown fields with HTTP 400 (verified against
+    // api.voyageai.com/v1/embeddings on 2026-05-13). Branch on hostname so
+    // each provider gets the right Matryoshka knob.
+    //
+    // Use URL parsing rather than `url.includes('voyageai.com')`: a substring
+    // check would also match path components, query strings, and adversarial
+    // hosts like `https://evil.example.com/voyageai.com/...` (the CodeQL
+    // "Incomplete URL substring sanitization" pattern). Hostname suffix-match
+    // is the safe form.
+    let host = '';
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch {
+      // Malformed URL falls through to the OpenAI-style default; the fetch
+      // below will fail on its own and surface the real error.
+    }
+    const isVoyageHost = host === 'voyageai.com' || host.endsWith('.voyageai.com');
+    if (isVoyageHost) {
+      requestBody.output_dimension = dimensions;
+    } else {
+      requestBody.dimensions = dimensions;
+    }
   }
 
   let resp: Response;
